@@ -33,6 +33,25 @@ const normalizeArrayField = (field) => {
     .map((item) => item.trim());
 };
 
+// Preserves { term, definition } objects returned by the AI,
+// and also handles legacy plain-string keyword arrays.
+const normalizeKeywordsField = (field) => {
+  if (!Array.isArray(field)) return [];
+  return field
+    .map((item) => {
+      if (item && typeof item === 'object') {
+        const term = String(item.term || item.word || item.keyword || '').trim();
+        const definition = String(item.definition || item.desc || '').trim();
+        return term ? { term, definition } : null;
+      }
+      if (typeof item === 'string' && item.trim().length > 2) {
+        return { term: item.trim(), definition: '' };
+      }
+      return null;
+    })
+    .filter(Boolean);
+};
+
 const getSavedFallback = async (userId, concept, category) => {
   if (!userId) return null;
 
@@ -109,6 +128,8 @@ router.post('/', optionalAuth, async (req, res) => {
     };
 
     parsed = tryParse(rawText);
+    console.log('[concept] raw AI response (first 500 chars):', String(rawText).slice(0, 500));
+    console.log('[concept] parsed keywords from AI:', JSON.stringify(parsed?.keywords));
 
     if (!parsed || !isValidField(parsed.oneLiner) || !isValidField(parsed.scenario)) {
       console.warn('LLM returned invalid or placeholder content. Raw response:', rawText);
@@ -145,8 +166,10 @@ router.post('/', optionalAuth, async (req, res) => {
       oneLiner: oneLiner.trim(),
       scenario: scenario.trim(),
       exampleScenarios: normalizeArrayField(exampleScenarios),
-      keywords: normalizeArrayField(keywords),
+      keywords: normalizeKeywordsField(keywords),
     };
+
+    console.log('[concept] final keywords sent to client:', JSON.stringify(responsePayload.keywords));
 
     if (req.user?.uid) {
       await saveSearchHistory(req.user.uid, responsePayload);

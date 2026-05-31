@@ -68,7 +68,7 @@ Explain the concept "${concept}" with the following output:
 1. A one-line simple definition
 2. A real-world scenario that demonstrates it
 3. Two additional short real-world examples
-4. A set of relevant keywords
+4. A set of relevant keywords, each with a short definition
 
 Respond ONLY in valid JSON format:
 {
@@ -78,14 +78,17 @@ Respond ONLY in valid JSON format:
     "A second short real-world example - maximum 30 words",
     "A third short real-world example - maximum 30 words"
   ],
-  "keywords": ["keyword1", "keyword2", "keyword3"]
+  "keywords": [
+    { "term": "keyword1", "definition": "One sentence explaining this keyword in context of the concept." },
+    { "term": "keyword2", "definition": "One sentence explaining this keyword in context of the concept." }
+  ]
 }
 
 Rules:
 * Keep the one-liner simple and direct
 * Make every scenario vivid, concrete, and easy to picture
 * Keep additional examples short and distinct from the main scenario
-* Provide 4 to 6 relevant keyword terms
+* Provide 4 to 6 keywords, each with a brief one-sentence definition explaining it in the context of the concept
 * Use plain, everyday language
 * No markdown or extra formatting
 * No extra text outside the JSON
@@ -105,7 +108,7 @@ async function generateAnthropicResponse(prompt) {
         content: prompt,
       },
     ],
-    max_tokens_to_sample: 400,
+    max_tokens: 900,
     temperature: 0.2,
   });
 
@@ -126,7 +129,7 @@ async function generateOpenAIResponse(prompt) {
   const response = await openaiClient.chat.completions.create({
     model: OPENAI_MODEL,
     messages: [{ role: 'user', content: prompt }],
-    max_tokens: 400,
+    max_tokens: 900,
     temperature: 0.2,
   });
 
@@ -143,16 +146,23 @@ async function generateGeminiResponse(prompt) {
     const text = result.response.text();
     const cleaned = text.replace(/```json|```/g, '').trim();
 
-    try {
-      const parsed = JSON.parse(cleaned);
-      return JSON.stringify(parsed);
-    } catch (error) {
-      const fallback = {
-        oneLiner: cleaned.split('\n')[0] || 'Explanation not available.',
-        scenario: cleaned.split('\n').slice(1).join(' ') || 'Scenario not available.',
-      };
-      return JSON.stringify(fallback);
+    // Use regex to find the JSON object even when Gemini adds surrounding text
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return JSON.stringify(parsed);
+      } catch (parseErr) {
+        console.warn('Gemini JSON parse failed after regex extraction:', parseErr.message);
+      }
     }
+
+    // Last resort: return what we can from plain text (no keywords)
+    const fallback = {
+      oneLiner: cleaned.split('\n')[0] || 'Explanation not available.',
+      scenario: cleaned.split('\n').slice(1).join(' ') || 'Scenario not available.',
+    };
+    return JSON.stringify(fallback);
   } catch (error) {
     if (isGeminiQuotaError(error)) {
       const fallbackProvider = getFallbackProvider();

@@ -97,13 +97,39 @@ function Result() {
             return [];
           };
 
+          // Parse keywords that may be objects { term, definition } or plain strings
+          const normalizeKeywordsRaw = (value) => {
+            const items = Array.isArray(value)
+              ? value
+              : typeof value === 'string'
+              ? value.split(/[,;\n]/)
+              : [];
+            return items
+              .map((item) => {
+                if (item && typeof item === 'object') {
+                  const term = String(item.term || item.word || item.keyword || '').trim();
+                  const definition = String(item.definition || item.desc || '').trim();
+                  return term ? { term, definition } : null;
+                }
+                if (typeof item === 'string' && item.trim().length > 2) {
+                  return { term: item.trim(), definition: '' };
+                }
+                return null;
+              })
+              .filter(Boolean);
+          };
+
           const apiData = response.data || {};
+          const keywordsRaw = normalizeKeywordsRaw(apiData.keywords);
           const normalized = {
             ...apiData,
             oneLiner: normalizeField(apiData.oneLiner) || 'Definition not available — try again.',
             scenario: normalizeField(apiData.scenario) || (apiData.scenario || ''),
             exampleScenarios: normalizeList(apiData.exampleScenarios),
-            keywords: normalizeList(apiData.keywords),
+            keywords: keywordsRaw.map((k) => k.term),
+            keywordDefinitions: Object.fromEntries(
+              keywordsRaw.map((k) => [k.term.toLowerCase(), k.definition])
+            ),
           };
 
           setData(normalized);
@@ -281,10 +307,14 @@ function Result() {
     };
 
     return data.keywords.map((keyword) => {
+      const aiDef = data.keywordDefinitions?.[keyword.toLowerCase()];
       const mapped = lookupDescription(keyword);
       return {
         term: keyword,
-        definition: mapped || buildKeywordDefinition(keyword),
+        definition:
+          aiDef && aiDef.length > 5
+            ? aiDef
+            : mapped || buildKeywordDefinition(keyword),
       };
     });
   }, [data]);
