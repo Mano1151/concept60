@@ -14,6 +14,7 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 import pandas as pd
+from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -612,7 +613,7 @@ class Concept60TestAutomation:
             
             # Save report
             report_name = f"Test_Report_OPTIMIZED_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            report_path = f"c:\\Users\\Mano\\OneDrive\\Desktop\\concept60\\{report_name}"
+            report_path = Path.cwd() / report_name
             wb.save(report_path)
             
             logger.info(f"Excel report generated: {report_path}")
