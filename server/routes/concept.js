@@ -95,6 +95,12 @@ const saveSearchHistory = async (userId, payload) => {
 };
 
 router.post('/', requireAuth, async (req, res) => {
+  console.log('==============================');
+  console.log('CONCEPT REQUEST RECEIVED');
+  console.log('Origin:', req.headers.origin || 'none');
+  console.log('Authorization:', req.headers.authorization ? 'Present' : 'Missing');
+  console.log('Body:', req.body);
+  console.log('==============================');
   const validationError = validatePayload(req.body);
   if (validationError) {
     return res.status(400).json({ message: validationError });
