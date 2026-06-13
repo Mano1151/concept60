@@ -28,7 +28,7 @@ export function initPerformanceMonitoring() {
 
 // Defer non-critical CSS
 export function deferNonCriticalStyles() {
-  const links = document.querySelectorAll('link[rel="stylesheet"]');
+  /*const links = document.querySelectorAll('link[rel="stylesheet"]');
   links.forEach((link) => {
     if (!link.hasAttribute('data-critical')) {
       link.media = 'print';
@@ -36,17 +36,17 @@ export function deferNonCriticalStyles() {
         this.media = 'all';
       });
     }
-  });
+  });*/
 }
 
 // Preload critical resources
 export function preloadCriticalResources() {
-  const criticalResources = [
+  /*const criticalResources = [
     { rel: 'preload', as: 'font', href: '/fonts/main.woff2', crossorigin: '' },
     { rel: 'preload', as: 'script', href: '/js/critical.js' },
     { rel: 'prefetch', href: '/pages/trending' },
     { rel: 'prefetch', href: '/pages/categories' },
-  ];
+  ];*/
 
   criticalResources.forEach(({ rel, as, href, crossorigin }) => {
     const link = document.createElement('link');
