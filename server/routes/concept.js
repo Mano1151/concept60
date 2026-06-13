@@ -128,26 +128,23 @@ router.post('/', optionalAuth, async (req, res) => {
     };
 
     parsed = tryParse(rawText);
-    console.log('[concept] raw AI response (first 500 chars):', String(rawText).slice(0, 500));
-    console.log('[concept] parsed keywords from AI:', JSON.stringify(parsed?.keywords));
 
     if (!parsed || !isValidField(parsed.oneLiner) || !isValidField(parsed.scenario)) {
-      console.warn('LLM returned invalid or placeholder content. Raw response:', rawText);
-      console.warn('Retrying once...');
+      console.warn('LLM returned invalid or placeholder content. Retrying once without exposing raw response.');
       try {
         const retryText = await generateConceptResponse(concept);
         const retryParsed = tryParse(retryText);
         if (retryParsed && isValidField(retryParsed.oneLiner) && isValidField(retryParsed.scenario)) {
           parsed = retryParsed;
         } else {
-          console.warn('Retry did not produce valid content. Attempting saved response fallback. Raw retry response:', retryText);
+          console.warn('Retry did not produce valid content. Attempting saved response fallback.');
           parsed = await getSavedFallback(req.user?.uid, concept, category);
           if (!parsed) {
             throw new Error('Unable to generate a valid concept explanation at this time.');
           }
         }
       } catch (retryErr) {
-        console.warn('Retry failed, attempting saved response fallback.', retryErr?.message || retryErr);
+        console.warn('Retry failed, attempting saved response fallback.');
         parsed = await getSavedFallback(req.user?.uid, concept, category);
         if (!parsed) {
           throw new Error('Unable to generate a valid concept explanation at this time.');
@@ -169,8 +166,6 @@ router.post('/', optionalAuth, async (req, res) => {
       keywords: normalizeKeywordsField(keywords),
     };
 
-    console.log('[concept] final keywords sent to client:', JSON.stringify(responsePayload.keywords));
-
     if (req.user?.uid) {
       await saveSearchHistory(req.user.uid, responsePayload);
     }
@@ -178,6 +173,9 @@ router.post('/', optionalAuth, async (req, res) => {
     return res.status(200).json(responsePayload);
   } catch (error) {
     console.error(error);
+    if (error.message?.includes('disallowed instruction-like text')) {
+      return res.status(400).json({ message: error.message });
+    }
     return res.status(500).json({ message: error.message || 'Unable to generate concept explanation.' });
   }
 });

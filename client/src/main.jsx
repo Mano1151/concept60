@@ -4,7 +4,11 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
+import { initAllOptimizations } from './utils/performance';
 import './index.css';
+
+// Initialize performance optimizations
+initAllOptimizations();
 
 const savedSettings = localStorage.getItem('concept60_accessibility_settings');
 if (savedSettings) {

@@ -27,14 +27,24 @@ router.get('/', requireAuth, async (req, res) => {
 router.delete('/:entryId', requireAuth, async (req, res) => {
   try {
     const { entryId } = req.params;
+    if (!entryId || typeof entryId !== 'string' || !entryId.trim() || !/^[a-zA-Z0-9_-]+$/.test(entryId)) {
+      return res.status(400).json({ message: 'Invalid entry id.' });
+    }
+
     const db = getFirestore();
-    await db
+    const userHistoryRef = db
       .collection('users')
       .doc(req.user.uid)
-      .collection('searchHistory')
-      .doc(entryId)
-      .delete();
+      .collection('searchHistory');
 
+    const entryRef = userHistoryRef.doc(entryId);
+    const entrySnapshot = await entryRef.get();
+
+    if (!entrySnapshot.exists) {
+      return res.status(404).json({ message: 'History entry not found.' });
+    }
+
+    await entryRef.delete();
     return res.status(200).json({ message: 'Entry deleted.' });
   } catch (error) {
     console.error('Error deleting history entry:', error);

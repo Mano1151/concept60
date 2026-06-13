@@ -5,6 +5,7 @@ import {
   onAuthStateChanged,
   sendPasswordResetEmail,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -42,6 +43,10 @@ export function AuthProvider({ children }) {
       return result.user;
     } catch (error) {
       console.error('Firebase signInWithPopup error:', error);
+      if (error?.code === 'auth/popup-blocked' || error?.code === 'auth/cancelled-popup-request') {
+        await signInWithRedirect(auth, googleProvider);
+        return null;
+      }
       throw new Error(
         error?.message ||
           'Unable to sign in with Google. Verify your Firebase config and that Google sign-in is enabled.'

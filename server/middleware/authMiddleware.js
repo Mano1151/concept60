@@ -10,7 +10,7 @@ export async function optionalAuth(req, res, next) {
   }
 
   try {
-    const decodedToken = await verifyIdToken(token);
+    const decodedToken = await verifyIdToken(token, true);
     req.user = decodedToken;
     return next();
   } catch (error) {
@@ -28,10 +28,30 @@ export async function requireAuth(req, res, next) {
   }
 
   try {
-    const decodedToken = await verifyIdToken(token);
+    const decodedToken = await verifyIdToken(token, true);
     req.user = decodedToken;
     return next();
   } catch (error) {
-    return res.status(401).json({ message: 'Invalid or expired auth token.' });
+    return res.status(401).json({ message: 'Invalid, revoked, or expired auth token.' });
   }
+}
+
+export function requireRole(requiredRole) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required.' });
+    }
+
+    const roles = Array.isArray(req.user.roles)
+      ? req.user.roles
+      : typeof req.user.role === 'string'
+      ? [req.user.role]
+      : [];
+
+    if (req.user.admin === true || roles.includes(requiredRole) || req.user[requiredRole] === true) {
+      return next();
+    }
+
+    return res.status(403).json({ message: 'Forbidden: insufficient privileges.' });
+  };
 }
