@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { admin } from '../firebaseAdmin.js';
 import { getFirestore } from '../firebaseAdmin.js';
-import { optionalAuth } from '../middleware/authMiddleware.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 import { generateConceptResponse } from '../services/claudeService.js';
 
 const router = Router();
@@ -94,7 +94,7 @@ const saveSearchHistory = async (userId, payload) => {
   await db.collection('users').doc(userId).collection('searchHistory').add(normalized);
 };
 
-router.post('/', optionalAuth, async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   const validationError = validatePayload(req.body);
   if (validationError) {
     return res.status(400).json({ message: validationError });

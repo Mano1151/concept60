@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { optionalAuth } from '../middleware/authMiddleware.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 import { generateVideoResponse } from '../services/claudeService.js';
 
 const router = Router();
@@ -24,7 +24,7 @@ const validatePayload = ({ concept, category }) => {
   return null;
 };
 
-router.post('/', optionalAuth, async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   const validationError = validatePayload(req.body);
   if (validationError) {
     return res.status(400).json({ message: validationError });

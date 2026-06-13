@@ -27,15 +27,18 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    if (
-      error.response?.status === 401 &&
-      originalRequest &&
-      !originalRequest._retry
-    ) {
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
-      if (originalRequest.headers?.Authorization) {
-        delete originalRequest.headers.Authorization;
-        return apiClient(originalRequest);
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        try {
+          const freshToken = await getIdToken(currentUser, true);
+          originalRequest.headers = originalRequest.headers || {};
+          originalRequest.headers.Authorization = `Bearer ${freshToken}`;
+          return apiClient(originalRequest);
+        } catch (tokenErr) {
+          console.warn('Failed to refresh token after 401:', tokenErr?.message || tokenErr);
+        }
       }
     }
     return Promise.reject(error);

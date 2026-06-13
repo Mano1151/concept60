@@ -1,4 +1,9 @@
 node_modules/
+.env
+/.env
+/.env.local
+/.env.*.local
+Vulnerability Test Results/node_modules/
 dist/
 .vscode/
 .env

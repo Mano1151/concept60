@@ -14,6 +14,8 @@ export async function optionalAuth(req, res, next) {
     req.user = decodedToken;
     return next();
   } catch (error) {
+    // Token present but verification failed; log a sanitized warning for visibility.
+    console.warn('Token verification failed for optional auth (user will be treated as anonymous):', error?.message || error);
     req.user = null;
     return next();
   }

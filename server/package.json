@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon index.js",
-    "start": "node index.js"
+    "start": "node index.js",
+    "audit": "npm audit --json > security-audit.json || true",
+    "audit:fix": "npm audit fix || true"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",

@@ -2,10 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-console.log("AI_PROVIDER:", process.env.AI_PROVIDER);
-console.log("GEMINI_MODEL:", process.env.GEMINI_MODEL);
-console.log("GEMINI_KEY_EXISTS:", !!process.env.GEMINI_API_KEY);
-console.log("GEMINI_KEY_PREFIX:", process.env.GEMINI_API_KEY?.substring(0, 10));
+// Do not log API keys or key prefixes to avoid leaking secrets in logs.
 
 const PROVIDER = process.env.AI_PROVIDER?.toLowerCase() || 'anthropic';
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
@@ -68,6 +65,22 @@ const PROMPT_INJECTION_PATTERNS = [
   /override (all )?previous instructions/i,
   /shutdown/i,
 ];
+
+function containsInstructionLikeText(text) {
+  if (!text || typeof text !== 'string') return false;
+  const normalized = text.toLowerCase();
+  return PROMPT_INJECTION_PATTERNS.some((p) => p.test(normalized));
+}
+
+async function runAndValidate(fn) {
+  const result = await fn();
+  const txt = String(result || '');
+  if (txt.trim().length < 5) throw new Error('Model response too short or empty.');
+  if (containsInstructionLikeText(txt)) {
+    throw new Error('Model output contains disallowed instruction-like text.');
+  }
+  return result;
+}
 
 function sanitizePromptInput(value, maxLength = 12000) {
   if (typeof value !== 'string') {
@@ -295,14 +308,14 @@ async function generateGenericResponse(prompt) {
   // provider lacked a valid API key.
   if (ACTIVE_PROVIDER === 'openai') {
     try {
-      return await generateOpenAIResponse(prompt);
+      return await runAndValidate(() => generateOpenAIResponse(prompt));
     } catch (error) {
-      console.warn('OpenAI generic response failed, attempting fallback:', error.message);
+      console.warn('OpenAI generic response failed or output invalid, attempting fallback:', error.message);
       if (anthropicClient) {
-        return await generateAnthropicResponse(prompt);
+        return await runAndValidate(() => generateAnthropicResponse(prompt));
       }
       if (geminiModel) {
-        return await generateGeminiResponse(prompt);
+        return await runAndValidate(() => generateGeminiResponse(prompt));
       }
       throw error;
     }
@@ -310,28 +323,28 @@ async function generateGenericResponse(prompt) {
 
   if (ACTIVE_PROVIDER === 'anthropic') {
     try {
-      return await generateAnthropicResponse(prompt);
+      return await runAndValidate(() => generateAnthropicResponse(prompt));
     } catch (error) {
-      console.warn('Anthropic generic response failed, attempting fallback:', error.message);
+      console.warn('Anthropic generic response failed or output invalid, attempting fallback:', error.message);
       if (openaiClient) {
-        return await generateOpenAIResponse(prompt);
+        return await runAndValidate(() => generateOpenAIResponse(prompt));
       }
       if (geminiModel) {
-        return await generateGeminiResponse(prompt);
+        return await runAndValidate(() => generateGeminiResponse(prompt));
       }
       throw error;
     }
   }
   if (ACTIVE_PROVIDER === 'gemini') {
     try {
-      return await generateGeminiResponse(prompt);
+      return await runAndValidate(() => generateGeminiResponse(prompt));
     } catch (error) {
-      console.warn('Gemini generic response failed, attempting fallback:', error.message);
+      console.warn('Gemini generic response failed or output invalid, attempting fallback:', error.message);
       if (openaiClient) {
-        return await generateOpenAIResponse(prompt);
+        return await runAndValidate(() => generateOpenAIResponse(prompt));
       }
       if (anthropicClient) {
-        return await generateAnthropicResponse(prompt);
+        return await runAndValidate(() => generateAnthropicResponse(prompt));
       }
       throw error;
     }
@@ -339,13 +352,13 @@ async function generateGenericResponse(prompt) {
 
   // Fallback default order.
   if (openaiClient) {
-    return await generateOpenAIResponse(prompt);
+    return await runAndValidate(() => generateOpenAIResponse(prompt));
   }
   if (anthropicClient) {
-    return await generateAnthropicResponse(prompt);
+    return await runAndValidate(() => generateAnthropicResponse(prompt));
   }
   if (geminiModel) {
-    return await generateGeminiResponse(prompt);
+    return await runAndValidate(() => generateGeminiResponse(prompt));
   }
   throw new Error('No AI provider available for generic response.');
 }
@@ -612,7 +625,8 @@ export async function generateVideoResponse(concept) {
     }
     parsed = JSON.parse(jsonMatch[0]);
   } catch (error) {
-    console.warn('JSON parsing failed for video output:', error.message, 'raw:', rawText);
+    // Avoid logging raw model outputs (rawText) which may contain sensitive data.
+    console.warn('JSON parsing failed for video output:', error.message);
     throw new Error('Unable to parse video storyboard from model response.');
   }
 

@@ -14,13 +14,21 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-//const allowedOrigin = process.env.CLIENT_ORIGIN || process.env.VITE_API_URL || 'http://localhost:5173';
-const allowedOrigins = [
+// Build allowed origins from environment or fall back to a safe default list.
+const envClientOrigin = process.env.CLIENT_ORIGIN;
+let allowedOrigins = [
   'https://concept60.onrender.com',
   'capacitor://localhost',
   'http://localhost',
   'http://localhost:5173',
 ];
+if (envClientOrigin) {
+  if (envClientOrigin.trim() === '*') {
+    throw new Error('CLIENT_ORIGIN must not be a wildcard. Set CLIENT_ORIGIN to a specific trusted origin.');
+  }
+  // Accept a single origin or comma-separated list
+  allowedOrigins = envClientOrigin.split(',').map((s) => s.trim()).filter(Boolean);
+}
 /*if (allowedOrigin === '*' || !/^https?:\/\/.+/.test(allowedOrigin)) {
   throw new Error('CLIENT_ORIGIN must be a valid http:// or https:// URL and not a wildcard.');
 }*/
@@ -62,9 +70,10 @@ app.set('trust proxy', 1);
 const limiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false }); // 60 requests / minute per IP
 app.use(limiter);
 
-const conceptLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
-const videoLimiter = rateLimit({ windowMs: 60 * 1000, max: 15, standardHeaders: true, legacyHeaders: false });
-const qaLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+// Tighter limits for expensive AI endpoints (per-IP). Consider adding per-account quotas.
+const conceptLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
+const videoLimiter = rateLimit({ windowMs: 60 * 1000, max: 8, standardHeaders: true, legacyHeaders: false });
+const qaLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
 const historyLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
 
@@ -72,9 +81,17 @@ app.get('/', (req, res) => {
   res.json({ status: 'Concept in 60 Seconds API is running.' });
 });
 
+app.get('/api/test', (req, res) => {
+  res.json({
+    success: true,
+    origin: req.headers.origin || 'none',
+  });
+});
+
 app.use('/api/concept', conceptLimiter, conceptRouter);
 app.use('/api/video', videoLimiter, videoRouter);
-app.use('/api/qa', qaLimiter, qaRouter);
+// Use a larger body parser for QA endpoint which expects larger PDF text payloads.
+app.use('/api/qa', express.json({ limit: '50kb' }), qaLimiter, qaRouter);
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/history', historyLimiter, historyRouter);
 

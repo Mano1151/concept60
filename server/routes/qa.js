@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { optionalAuth } from '../middleware/authMiddleware.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 import { generatePdfAnswer } from '../services/claudeService.js';
 
 const router = Router();
 
-router.post('/pdf-question', optionalAuth, async (req, res) => {
+router.post('/pdf-question', requireAuth, async (req, res) => {
   const { pdfText, question } = req.body;
 
   if (!pdfText || typeof pdfText !== 'string' || !pdfText.trim()) {
