@@ -14,14 +14,25 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-const allowedOrigin = process.env.CLIENT_ORIGIN || process.env.VITE_API_URL || 'http://localhost:5173';
+//const allowedOrigin = process.env.CLIENT_ORIGIN || process.env.VITE_API_URL || 'http://localhost:5173';
+const allowedOrigins = [
+  'https://concept60.onrender.com',
+  'capacitor://localhost',
+  'http://localhost',
+  'http://localhost:5173',
+];
 if (allowedOrigin === '*' || !/^https?:\/\/.+/.test(allowedOrigin)) {
   throw new Error('CLIENT_ORIGIN must be a valid http:// or https:// URL and not a wildcard.');
 }
 app.use(cors({
-  origin: allowedOrigin,
-  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
