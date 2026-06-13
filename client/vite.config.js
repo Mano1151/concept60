@@ -7,22 +7,17 @@ export default defineConfig({
     port: 5173,
   },
   build: {
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-        },
+  rollupOptions: {
+    output: {
+      manualChunks: {
+        vendor: ['react', 'react-dom', 'react-router-dom'],
       },
     },
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-      },
-    },
-    sourcemap: false,
-    chunkSizeWarningLimit: 500,
   },
+  minify: 'esbuild',
+  sourcemap: false,
+  chunkSizeWarningLimit: 500,
+},
   esbuild: {
     drop: ['console', 'debugger'],
   },
