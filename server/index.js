@@ -33,15 +33,8 @@ if (envClientOrigin) {
   throw new Error('CLIENT_ORIGIN must be a valid http:// or https:// URL and not a wildcard.');
 }*/
 app.use(cors({
-  origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    callback(new Error('Not allowed by CORS'));
-  },
+  origin: true,
   credentials: true,
-  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 app.use(helmet({
