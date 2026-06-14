@@ -223,3 +223,16 @@ Minor improvements needed in **image optimization** and **page load performance*
 2. Implement performance optimizations
 3. Re-run tests after improvements
 4. Set up continuous integration testing
+
+---
+
+## GitHub Actions E2E Report Workflow
+
+- Workflow file: `.github/workflows/e2e-report.yml`
+- Triggers on: `push` to `main`, `master`, and `release/*`
+- Runs:
+  - `python -m pip install --upgrade pip`
+  - `pip install -r requirements.txt`
+  - `python e2e_test_automation_optimized.py`
+- Artifact uploaded as: `e2e-excel-report`
+- Report file pattern: `Test_Report_OPTIMIZED_*.xlsx`

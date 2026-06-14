@@ -3,6 +3,7 @@ Enhanced Selenium E2E Test Automation Suite for Concept60
 Comprehensive test cases with performance optimization validation
 """
 
+import sys
 import time
 import logging
 from datetime import datetime
@@ -36,9 +37,11 @@ class Concept60TestAutomation:
         """Initialize Chrome WebDriver"""
         try:
             chrome_options = Options()
+            chrome_options.add_argument('--headless=new')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument('--window-size=1920,1080')
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             
@@ -624,7 +627,8 @@ class Concept60TestAutomation:
 
 def main():
     tester = Concept60TestAutomation()
-    tester.run_all_tests()
+    success = tester.run_all_tests()
+    sys.exit(0 if success else 1)
 
 if __name__ == "__main__":
     main()
