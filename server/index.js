@@ -56,7 +56,7 @@ app.use(helmet({
 }));
 
 // Limit request body size to prevent large payload abuse
-app.use(express.json({ limit: '10kb' }));
+app.use(express.json({ limit: '100mb' }));
 
 // Basic rate limiting
 app.set('trust proxy', 1);
