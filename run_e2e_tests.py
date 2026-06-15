@@ -14,7 +14,8 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 # Target URL and directories
 BASE_URL = "http://localhost:5173"
-OUTPUT_DIR = r"c:\Projects\concept60\e2e test"
+WORKSPACE_ROOT = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(WORKSPACE_ROOT, "e2e test")
 REPORT_PATH = os.path.join(OUTPUT_DIR, "e2e_test_report.xlsx")
 
 # Credentials
