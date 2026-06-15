@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "nodemon index.js",
     "start": "node index.js",
+    "build": "echo 'No build step needed'",
     "audit": "npm audit --json > security-audit.json || true",
     "audit:fix": "npm audit fix || true"
   },
