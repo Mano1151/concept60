@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { requireAuth } from '../middleware/authMiddleware.js';
+import { optionalAuth } from '../middleware/authMiddleware.js';
 import { generatePdfAnswer } from '../services/claudeService.js';
 
 const router = Router();
 
-router.post('/pdf-question', requireAuth, async (req, res) => {
+router.post('/pdf-question', optionalAuth, async (req, res) => {
   const { pdfText, question } = req.body;
 
   if (!pdfText || typeof pdfText !== 'string' || !pdfText.trim()) {
@@ -28,7 +28,7 @@ router.post('/pdf-question', requireAuth, async (req, res) => {
     return res.json({ answer });
   } catch (error) {
     console.error('PDF QA error:', error);
-    if (error.message?.includes('disallowed instruction-like text')) {
+    if (error.message?.includes('instruction-like text')) {
       return res.status(400).json({ message: error.message });
     }
     return res.status(500).json({ message: 'Unable to answer the PDF question. Please try again.' });

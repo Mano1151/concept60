@@ -60,15 +60,16 @@ app.use(express.json({ limit: '100mb' }));
 
 // Basic rate limiting
 app.set('trust proxy', 1);
-const limiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false }); // 60 requests / minute per IP
+const isLocal = (req) => req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+const limiter = rateLimit({ windowMs: 60 * 1000, max: (req) => isLocal(req) ? 1000 : 60, standardHeaders: true, legacyHeaders: false }); // 60 requests / minute per IP
 app.use(limiter);
 
 // Tighter limits for expensive AI endpoints (per-IP). Consider adding per-account quotas.
-const conceptLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
-const videoLimiter = rateLimit({ windowMs: 60 * 1000, max: 8, standardHeaders: true, legacyHeaders: false });
-const qaLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
-const historyLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
-const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+const conceptLimiter = rateLimit({ windowMs: 60 * 1000, max: (req) => isLocal(req) ? 1000 : 10, standardHeaders: true, legacyHeaders: false });
+const videoLimiter = rateLimit({ windowMs: 60 * 1000, max: (req) => isLocal(req) ? 1000 : 8, standardHeaders: true, legacyHeaders: false });
+const qaLimiter = rateLimit({ windowMs: 60 * 1000, max: (req) => isLocal(req) ? 1000 : 10, standardHeaders: true, legacyHeaders: false });
+const historyLimiter = rateLimit({ windowMs: 60 * 1000, max: (req) => isLocal(req) ? 1000 : 20, standardHeaders: true, legacyHeaders: false });
+const authLimiter = rateLimit({ windowMs: 60 * 1000, max: (req) => isLocal(req) ? 1000 : 30, standardHeaders: true, legacyHeaders: false });
 
 app.get('/', (req, res) => {
   res.json({ status: 'Concept in 60 Seconds API is running.' });

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { admin } from '../firebaseAdmin.js';
 import { getFirestore } from '../firebaseAdmin.js';
-import { requireAuth } from '../middleware/authMiddleware.js';
+import { optionalAuth } from '../middleware/authMiddleware.js';
 import { generateConceptResponse } from '../services/claudeService.js';
 
 const router = Router();
@@ -94,7 +94,7 @@ const saveSearchHistory = async (userId, payload) => {
   await db.collection('users').doc(userId).collection('searchHistory').add(normalized);
 };
 
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', optionalAuth, async (req, res) => {
   console.log('==============================');
   console.log('CONCEPT REQUEST RECEIVED');
   console.log('Origin:', req.headers.origin || 'none');
@@ -179,7 +179,7 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(200).json(responsePayload);
   } catch (error) {
     console.error(error);
-    if (error.message?.includes('disallowed instruction-like text')) {
+    if (error.message?.includes('instruction-like text')) {
       return res.status(400).json({ message: error.message });
     }
     return res.status(500).json({ message: error.message || 'Unable to generate concept explanation.' });
