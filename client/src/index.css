@@ -35,8 +35,12 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at top, rgba(108, 99, 255, 0.14), transparent 36%),
-    #0f0f0f;
+  background: 
+    radial-gradient(circle at 15% 15%, rgba(108, 99, 255, 0.22), transparent 45%),
+    radial-gradient(circle at 85% 10%, rgba(34, 211, 238, 0.18), transparent 40%),
+    radial-gradient(circle at 50% 85%, rgba(236, 72, 153, 0.12), transparent 50%),
+    #09090e;
+  color: #f8fafc;
 }
 
 * {
@@ -183,8 +187,17 @@ html[data-font='Poppins'] {
 
 .card {
   border-radius: var(--card-radius);
-  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  background: rgba(26, 26, 26, 0.45);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   box-shadow: var(--soft-shadow);
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-2.5px);
+  border-color: rgba(108, 99, 255, 0.25);
+  box-shadow: 0 20px 50px rgba(108, 99, 255, 0.12), 0 0 30px rgba(34, 211, 238, 0.05);
 }
 
 .btn-primary {
@@ -246,4 +259,32 @@ html[data-font='JetBrains Mono'] {
 .focus-reading button[aria-pressed='true'] {
   border-color: rgba(108, 99, 255, 0.8);
   background-color: rgba(108, 99, 255, 0.18);
+}
+
+/* 🌟 Rich Aesthetics & Interactive Hover Glows 🌟 */
+button, input, textarea, select, a {
+  transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:hover, a:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1.5px);
+}
+
+button:active, a:active {
+  transform: translateY(1px);
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: rgba(108, 99, 255, 0.5) !important;
+  box-shadow: 0 0 15px rgba(108, 99, 255, 0.25), 0 0 2px rgba(34, 211, 238, 0.1) !important;
+}
+
+/* Category pills hover glow */
+button.bg-accent, Link.bg-accent {
+  box-shadow: 0 4px 14px rgba(108, 99, 255, 0.25);
+}
+
+button.bg-accent:hover, Link.bg-accent:hover {
+  box-shadow: 0 6px 22px rgba(108, 99, 255, 0.45), 0 0 10px rgba(34, 211, 238, 0.15);
 }
