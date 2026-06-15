@@ -43,6 +43,9 @@ function getFallbackProvider() {
   if (PROVIDER !== 'ollama') {
     return 'ollama';
   }
+  if (PROVIDER !== 'gemini' && geminiModel) {
+    return 'gemini';
+  }
   if (PROVIDER !== 'anthropic' && anthropicClient) {
     return 'anthropic';
   }
@@ -576,6 +579,13 @@ export async function generateConceptResponse(concept) {
           console.warn('OpenAI fallback failed:', openaiErr.message);
         }
       }
+      if (geminiModel) {
+        try {
+          return String((await generateGeminiResponse(prompt)) || '').trim();
+        } catch (geminiErr) {
+          console.warn('Gemini fallback failed:', geminiErr.message);
+        }
+      }
       if (anthropicClient) {
         try {
           return String((await generateAnthropicResponse(prompt)) || '').trim();
@@ -685,6 +695,13 @@ export async function generateVideoResponse(concept) {
         } catch (openaiErr) {
           console.warn('OpenAI fallback failed:', openaiErr.message);
           throw openaiErr;
+        }
+      } else if (geminiModel) {
+        try {
+          rawText = await generateGeminiResponse(prompt);
+        } catch (geminiErr) {
+          console.warn('Gemini fallback failed:', geminiErr.message);
+          throw geminiErr;
         }
       } else if (anthropicClient) {
         try {
