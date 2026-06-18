@@ -14,9 +14,7 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
+
 // Build allowed origins from environment or fall back to a safe default list.
 const envClientOrigin = process.env.CLIENT_ORIGIN;
 let allowedOrigins = [
