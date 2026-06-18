@@ -8,63 +8,31 @@ const {
   FIREBASE_PRIVATE_KEY,
 } = process.env;
 
-// ─── Private key normalization ────────────────────────────────────────────────
-// Render (and many CI systems) can store env vars in different formats:
-//   • Literal backslash-n  → "-----BEGIN...\n-----END..."  (needs replace)
-//   • Actual newlines      → already valid PEM
-//   • Quoted string        → "\"-----BEGIN...\""  (needs unquoting)
-function normalizePrivateKey(raw) {
-  if (!raw) return undefined;
-  // 1. Strip surrounding quotes if present
-  let key = raw.trim().replace(/^["']|["']$/g, '');
-  // 2. If it still has literal \n sequences, replace them with real newlines
-  if (!key.includes('\n')) {
-    key = key.replace(/\\n/g, '\n');
-  }
-  return key;
-}
-
-const firebasePrivateKey = normalizePrivateKey(FIREBASE_PRIVATE_KEY);
+// Normalize private key: convert escaped "\n" sequences into real newlines.
+const firebasePrivateKey = FIREBASE_PRIVATE_KEY
+  ? FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+  : undefined;
 
 const firebaseCredentials = {
-  projectId:   FIREBASE_PROJECT_ID,
+  projectId: FIREBASE_PROJECT_ID,
   clientEmail: FIREBASE_CLIENT_EMAIL,
-  privateKey:  firebasePrivateKey,
+  privateKey: firebasePrivateKey,
 };
-
-let _initError = null;
 
 export function getFirebaseApp() {
   if (!admin.apps.length) {
     if (!firebaseCredentials.projectId || !firebaseCredentials.clientEmail || !firebaseCredentials.privateKey) {
-      const msg = 'Missing Firebase Admin SDK environment variables. Check FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY on Render.';
-      _initError = new Error(msg);
-      console.error('[Firebase] Init error:', msg);
-      throw _initError;
+      throw new Error('Missing Firebase Admin SDK environment variables.');
     }
     // Sanity-check private key format to catch normalization issues early
     if (!firebaseCredentials.privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
-      const msg = 'FIREBASE_PRIVATE_KEY does not appear to be a valid PEM private key. It may be missing newlines — set it on Render as a single line with literal \\n characters.';
-      _initError = new Error(msg);
-      console.error('[Firebase] Init error:', msg);
-      throw _initError;
+      throw new Error('FIREBASE_PRIVATE_KEY does not appear to be a valid PEM private key.');
     }
-    try {
-      admin.initializeApp({
-        credential: admin.credential.cert(firebaseCredentials),
-      });
-      console.log('[Firebase] Admin SDK initialized successfully for project:', firebaseCredentials.projectId);
-    } catch (err) {
-      _initError = err;
-      console.error('[Firebase] initializeApp failed:', err.message);
-      throw err;
-    }
+    admin.initializeApp({
+      credential: admin.credential.cert(firebaseCredentials),
+    });
   }
   return admin.app();
-}
-
-export function getInitError() {
-  return _initError;
 }
 
 export function getFirestore() {
@@ -78,4 +46,3 @@ export async function verifyIdToken(idToken, checkRevoked = false) {
 }
 
 export { admin };
-

@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { auth } from '../firebase';
-import { getIdToken, signOut } from 'firebase/auth';
+import { getIdToken } from 'firebase/auth';
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
@@ -32,23 +32,14 @@ apiClient.interceptors.response.use(
       const currentUser = auth.currentUser;
       if (currentUser) {
         try {
-          // Force a fresh token on 401
           const freshToken = await getIdToken(currentUser, true);
           originalRequest.headers = originalRequest.headers || {};
           originalRequest.headers.Authorization = `Bearer ${freshToken}`;
           return apiClient(originalRequest);
         } catch (tokenErr) {
           console.warn('Failed to refresh token after 401:', tokenErr?.message || tokenErr);
-          // Token refresh failed — sign out so the user can re-authenticate cleanly
-          try {
-            await signOut(auth);
-          } catch (_) { /* ignore signOut errors */ }
-          window.location.href = '/login';
-          return Promise.reject(tokenErr);
         }
       }
-      // No current user — redirect to login
-      window.location.href = '/login';
     }
     return Promise.reject(error);
   }

@@ -8,10 +8,8 @@ import videoRouter from './routes/video.js';
 import qaRouter from './routes/qa.js';
 import historyRouter from './routes/history.js';
 import authRouter from './routes/auth.js';
-import { getInitError } from './firebaseAdmin.js';
 
 dotenv.config();
-
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -73,12 +71,12 @@ app.use(express.json({ limit: '10kb' }));
 // ─── Rate Limiting — FIX M-07: No localhost bypass; all IPs treated equally ──
 app.set('trust proxy', 1);
 
-const limiter          = rateLimit({ windowMs: 60_000, max: 60,  standardHeaders: true, legacyHeaders: false });
-const conceptLimiter   = rateLimit({ windowMs: 60_000, max: 10,  standardHeaders: true, legacyHeaders: false });
-const videoLimiter     = rateLimit({ windowMs: 60_000, max: 8,   standardHeaders: true, legacyHeaders: false });
-const qaLimiter        = rateLimit({ windowMs: 60_000, max: 10,  standardHeaders: true, legacyHeaders: false });
-const historyLimiter   = rateLimit({ windowMs: 60_000, max: 20,  standardHeaders: true, legacyHeaders: false });
-const authLimiter      = rateLimit({ windowMs: 60_000, max: 30,  standardHeaders: true, legacyHeaders: false });
+const limiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
+const conceptLimiter = rateLimit({ windowMs: 60_000, max: 10, standardHeaders: true, legacyHeaders: false });
+const videoLimiter = rateLimit({ windowMs: 60_000, max: 8, standardHeaders: true, legacyHeaders: false });
+const qaLimiter = rateLimit({ windowMs: 60_000, max: 10, standardHeaders: true, legacyHeaders: false });
+const historyLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
+const authLimiter = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 
 app.use(limiter);
 
@@ -87,31 +85,18 @@ app.get('/', (req, res) => {
   res.json({ status: 'Concept in 60 Seconds API is running.' });
 });
 
-// ─── Health / diagnostics endpoint (no secrets exposed) ───────────────────────
-app.get('/api/health', (req, res) => {
-  const initError = getInitError();
-  res.json({
-    status: 'ok',
-    firebase: initError
-      ? { initialized: false, error: initError.message }
-      : { initialized: true },
-    provider: process.env.AI_PROVIDER || 'ollama',
-  });
-});
-
 // ─── Test endpoint — FIX M-03: No longer reflects origin header ──────────────
 app.get('/api/test', (req, res) => {
   res.json({ success: true });
 });
 
-
 // ─── Routes ───────────────────────────────────────────────────────────────────
 // FIX C-03: per-route body limits appropriate to each endpoint's data size
-app.use('/api/concept', express.json({ limit: '5kb' }),  conceptLimiter, conceptRouter);
-app.use('/api/video',   express.json({ limit: '5kb' }),  videoLimiter,   videoRouter);
-app.use('/api/qa',      express.json({ limit: '50kb' }), qaLimiter,      qaRouter);
-app.use('/api/auth',    authLimiter,                                      authRouter);
-app.use('/api/history', historyLimiter,                                   historyRouter);
+app.use('/api/concept', express.json({ limit: '5kb' }), conceptLimiter, conceptRouter);
+app.use('/api/video', express.json({ limit: '5kb' }), videoLimiter, videoRouter);
+app.use('/api/qa', express.json({ limit: '50kb' }), qaLimiter, qaRouter);
+app.use('/api/auth', authLimiter, authRouter);
+app.use('/api/history', historyLimiter, historyRouter);
 
 const server = app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
