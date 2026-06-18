@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-
+import Groq from "groq-sdk";
 // Do not log API keys or key prefixes to avoid leaking secrets in logs.
 
 const PROVIDER = process.env.AI_PROVIDER?.toLowerCase() || 'ollama';
