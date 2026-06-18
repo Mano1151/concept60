@@ -8,8 +8,10 @@ import videoRouter from './routes/video.js';
 import qaRouter from './routes/qa.js';
 import historyRouter from './routes/history.js';
 import authRouter from './routes/auth.js';
+import { getInitError } from './firebaseAdmin.js';
 
 dotenv.config();
+
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -85,10 +87,23 @@ app.get('/', (req, res) => {
   res.json({ status: 'Concept in 60 Seconds API is running.' });
 });
 
+// ─── Health / diagnostics endpoint (no secrets exposed) ───────────────────────
+app.get('/api/health', (req, res) => {
+  const initError = getInitError();
+  res.json({
+    status: 'ok',
+    firebase: initError
+      ? { initialized: false, error: initError.message }
+      : { initialized: true },
+    provider: process.env.AI_PROVIDER || 'ollama',
+  });
+});
+
 // ─── Test endpoint — FIX M-03: No longer reflects origin header ──────────────
 app.get('/api/test', (req, res) => {
   res.json({ success: true });
 });
+
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 // FIX C-03: per-route body limits appropriate to each endpoint's data size
