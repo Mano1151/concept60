@@ -10,3 +10,7 @@ dist/
 client/node_modules/
 server/node_modules/
 .DS_Store
+.venv/
+__pycache__/
+*.pyc
+~$*.xlsx

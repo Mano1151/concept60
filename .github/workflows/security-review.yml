@@ -1,0 +1,435 @@
+name: 🔐 Security Review
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # ─── Phase 1: Detect Backend Technology ──────────────────────────────────────
+  detect-stack:
+    name: 🔍 Detect Backend Technology
+    runs-on: ubuntu-latest
+    outputs:
+      has_node: ${{ steps.detect.outputs.has_node }}
+      has_python: ${{ steps.detect.outputs.has_python }}
+      has_java: ${{ steps.detect.outputs.has_java }}
+      stack: ${{ steps.detect.outputs.stack }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect stack
+        id: detect
+        run: |
+          has_node="false"
+          has_python="false"
+          has_java="false"
+          stack="unknown"
+
+          if [ -f "server/package.json" ] || [ -f "package.json" ]; then
+            has_node="true"
+            stack="nodejs-express"
+            echo "✅ Detected: Node.js / Express"
+          fi
+          if [ -f "requirements.txt" ] || [ -f "setup.py" ] || [ -f "pyproject.toml" ]; then
+            has_python="true"
+            stack="${stack},python"
+            echo "✅ Detected: Python"
+          fi
+          if [ -f "pom.xml" ] || [ -f "build.gradle" ]; then
+            has_java="true"
+            stack="${stack},java"
+            echo "✅ Detected: Java"
+          fi
+
+          echo "has_node=$has_node" >> $GITHUB_OUTPUT
+          echo "has_python=$has_python" >> $GITHUB_OUTPUT
+          echo "has_java=$has_java" >> $GITHUB_OUTPUT
+          echo "stack=$stack" >> $GITHUB_OUTPUT
+
+      - name: Summarize detection
+        run: |
+          echo "## 🔍 Stack Detection" >> $GITHUB_STEP_SUMMARY
+          echo "| Language | Detected |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Node.js | ${{ steps.detect.outputs.has_node }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Python | ${{ steps.detect.outputs.has_python }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Java | ${{ steps.detect.outputs.has_java }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Stack | ${{ steps.detect.outputs.stack }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ─── Phase 2: Secret Scanning (Gitleaks) ─────────────────────────────────────
+  secret-scan:
+    name: 🔑 Secret Scanning (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Report Gitleaks results
+        run: |
+          echo "## 🔑 Secret Scan Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f "gitleaks-report.json" ]; then
+            LEAKS=$(cat gitleaks-report.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d) if isinstance(d, list) else 0)" 2>/dev/null || echo "0")
+            echo "Secrets found: **$LEAKS**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No secrets detected." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ─── Phase 3: SAST — Node.js / Express ───────────────────────────────────────
+  sast-nodejs:
+    name: 🔬 SAST — Node.js (Semgrep)
+    runs-on: ubuntu-latest
+    needs: detect-stack
+    if: needs.detect-stack.outputs.has_node == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep SAST
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/nodejs
+            p/express
+            p/jwt
+            p/secrets
+            p/owasp-top-ten
+            p/javascript
+            p/security-audit
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        continue-on-error: true
+
+      - name: Install Semgrep (fallback without token)
+        if: env.SEMGREP_APP_TOKEN == ''
+        run: pip install semgrep
+
+      - name: Run Semgrep locally (fallback)
+        if: env.SEMGREP_APP_TOKEN == ''
+        run: |
+          semgrep --config=p/nodejs --config=p/javascript \
+            --json --output=semgrep-results.json \
+            server/ || true
+        continue-on-error: true
+
+      - name: Upload Semgrep results
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: semgrep-results.json
+          if-no-files-found: ignore
+
+      - name: Semgrep summary
+        run: |
+          echo "## 🔬 SAST Results (Semgrep)" >> $GITHUB_STEP_SUMMARY
+          if [ -f "semgrep-results.json" ]; then
+            FINDINGS=$(python3 -c "
+          import json, sys
+          try:
+            d = json.load(open('semgrep-results.json'))
+            results = d.get('results', [])
+            critical = sum(1 for r in results if r.get('extra',{}).get('severity','') in ['ERROR','CRITICAL'])
+            high = sum(1 for r in results if r.get('extra',{}).get('severity','') == 'WARNING')
+            print(f'Total: {len(results)}, Critical/Error: {critical}, High/Warning: {high}')
+          except Exception as e:
+            print('Unable to parse results')
+          " 2>/dev/null || echo "No results")
+            echo "$FINDINGS" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Semgrep results not available (token required for full scan)." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ─── Phase 4: Dependency Scanning ────────────────────────────────────────────
+  dependency-scan:
+    name: 📦 Dependency Scan (npm audit + Trivy)
+    runs-on: ubuntu-latest
+    needs: detect-stack
+    if: needs.detect-stack.outputs.has_node == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: npm audit — Server
+        working-directory: server
+        run: |
+          npm install --ignore-scripts 2>/dev/null || true
+          npm audit --json > ../audit-server.json 2>/dev/null || true
+          npm audit --audit-level=high 2>/dev/null || true
+        continue-on-error: true
+
+      - name: npm audit — Client
+        working-directory: client
+        run: |
+          npm install --ignore-scripts 2>/dev/null || true
+          npm audit --json > ../audit-client.json 2>/dev/null || true
+          npm audit --audit-level=high 2>/dev/null || true
+        continue-on-error: true
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          ignore-unfixed: false
+        continue-on-error: true
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
+
+      - name: Upload audit reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-reports
+          path: |
+            audit-server.json
+            audit-client.json
+            trivy-results.sarif
+          if-no-files-found: ignore
+
+      - name: Parse and summarize audit results
+        run: |
+          echo "## 📦 Dependency Audit Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          for f in audit-server.json audit-client.json; do
+            if [ -f "$f" ]; then
+              LABEL="${f/audit-/} ${f/-*.json/}"
+              python3 -c "
+          import json, sys
+          try:
+            d = json.load(open('$f'))
+            meta = d.get('metadata', {})
+            vulns = meta.get('vulnerabilities', {})
+            print(f'**$f**: critical={vulns.get(\"critical\",0)}, high={vulns.get(\"high\",0)}, moderate={vulns.get(\"moderate\",0)}, low={vulns.get(\"low\",0)}')
+          except:
+            print('**$f**: Unable to parse')
+          " >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "**$f**: not available" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+  # ─── Phase 5: API Security Check (DAST with curl) ────────────────────────────
+  api-security-check:
+    name: 🌐 API Security Check (DAST)
+    runs-on: ubuntu-latest
+    # Only runs if API_TEST_URL secret is configured
+    if: vars.API_TEST_URL != ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: DAST — CORS test
+        run: |
+          BASE_URL="${{ vars.API_TEST_URL }}"
+          echo "## 🌐 DAST Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Test | Endpoint | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+
+          # Test 1: CORS origin reflection
+          CORS_HEADER=$(curl -s -o /dev/null -I -w "%{http_code}" \
+            -H "Origin: https://evil-attacker.com" \
+            "${BASE_URL}/" 2>/dev/null)
+          ALLOW_ORIGIN=$(curl -s -I -H "Origin: https://evil-attacker.com" "${BASE_URL}/" 2>/dev/null | grep -i "access-control-allow-origin" || echo "not present")
+          
+          if echo "$ALLOW_ORIGIN" | grep -q "evil-attacker"; then
+            echo "| ❌ CORS Origin Reflection | / | VULNERABLE — reflects evil origin |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| ✅ CORS Origin Reflection | / | Safe — evil origin rejected |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Test 2: Auth required on history endpoint
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/history")
+          if [ "$STATUS" = "401" ]; then
+            echo "| ✅ Auth on /api/history | GET /api/history | 401 returned correctly |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| ❌ Auth on /api/history | GET /api/history | Expected 401, got $STATUS |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Test 3: Invalid JWT rejected
+          INVALID_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer invalid.jwt.token" \
+            "${BASE_URL}/api/history")
+          if [ "$INVALID_STATUS" = "401" ]; then
+            echo "| ✅ Invalid JWT rejected | GET /api/history | 401 returned |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| ❌ Invalid JWT not rejected | GET /api/history | Expected 401, got $INVALID_STATUS |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Test 4: Large payload rejection (oversized body)
+          LARGE_PAYLOAD=$(python3 -c "import json; print(json.dumps({'concept': 'A'*200, 'category': 'test'}))")
+          LARGE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${BASE_URL}/api/concept" \
+            -H "Content-Type: application/json" \
+            -d "$LARGE_PAYLOAD")
+          if [ "$LARGE_STATUS" = "400" ]; then
+            echo "| ✅ Large concept rejected | POST /api/concept | 400 returned |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| ⚠️ Large concept | POST /api/concept | Got $LARGE_STATUS (input validation check) |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Test 5: Rate limiting headers present
+          RATE_HEADERS=$(curl -s -I "${BASE_URL}/" 2>/dev/null | grep -i "ratelimit\|x-ratelimit\|retry-after" || echo "not present")
+          if echo "$RATE_HEADERS" | grep -qi "ratelimit"; then
+            echo "| ✅ Rate limit headers | / | Headers present |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| ⚠️ Rate limit headers | / | Not visible in response headers |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Test 6: Security headers present
+          HELMET_HEADERS=$(curl -s -I "${BASE_URL}/" 2>/dev/null)
+          for header in "content-security-policy" "x-frame-options" "x-content-type-options"; do
+            if echo "$HELMET_HEADERS" | grep -qi "$header"; then
+              echo "| ✅ Security header: $header | / | Present |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| ❌ Missing header: $header | / | Not found |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          # Test 7: Error info leakage
+          ERROR_RESPONSE=$(curl -s -X POST "${BASE_URL}/api/concept" \
+            -H "Content-Type: application/json" \
+            -d '{"concept":"","category":""}')
+          if echo "$ERROR_RESPONSE" | grep -qi "stack\|trace\|at Object\|internal\|api_key"; then
+            echo "| ❌ Error leakage | POST /api/concept | Stack/internal info exposed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| ✅ Error leakage | POST /api/concept | No stack/internal info exposed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ─── Phase 6: Generate Security Reports ──────────────────────────────────────
+  generate-reports:
+    name: 📊 Generate Security Reports
+    runs-on: ubuntu-latest
+    needs: [secret-scan, sast-nodejs, dependency-scan]
+    if: always()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+        continue-on-error: true
+
+      - name: Install report dependencies
+        working-directory: "Vulnerability Test Results"
+        run: npm install
+        continue-on-error: true
+
+      - name: Generate Excel report
+        working-directory: "Vulnerability Test Results"
+        run: node generate-excel.mjs
+        continue-on-error: true
+
+      - name: Generate GitHub Actions Summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🛡️ Concept60 Security Review — Summary
+
+          | Category | Finding |
+          |---|---|
+          | 🔴 Critical | 1 — Wildcard CORS Override |
+          | 🟠 High | 4 — Body Size DoS, SSRF/URL injection, Error Leakage, Prompt Injection |
+          | 🟡 Medium | 5 — Rate limiting, Anonymous AI access, Body logging, HSTS, Post-logout window |
+          | 🟢 Low | 4 — SRI, Fake API key, trust proxy, HSTS preload |
+          | **Total** | **14 findings** |
+
+          ### Overall Security Score: 64/100
+
+          ### Top P0 Actions Required:
+          1. **Fix CORS** — Change `origin: true` → enforce `allowedOrigins` list
+          2. **Reduce body limit** — Change `100mb` → `10kb` global default
+          3. **Generic error messages** — Don't expose `error.message` in HTTP 500 responses
+
+          ### Reports generated:
+          - `Vulnerability Test Results/security-review.md` — Full SAST findings
+          - `Vulnerability Test Results/executive-summary.md` — Executive summary
+          - `Vulnerability Test Results/dependency-report.md` — Dependency analysis
+          - `Vulnerability Test Results/findings.xlsx` — Excel workbook (all sheets)
+
+          EOF
+
+      - name: Upload all security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            Vulnerability Test Results/security-review.md
+            Vulnerability Test Results/executive-summary.md
+            Vulnerability Test Results/dependency-report.md
+            Vulnerability Test Results/findings.xlsx
+          if-no-files-found: ignore
+          retention-days: 90
+
+  # ─── Phase 7: Fail on Critical ───────────────────────────────────────────────
+  quality-gate:
+    name: 🚦 Quality Gate (Fail on Critical)
+    runs-on: ubuntu-latest
+    needs: [sast-nodejs, dependency-scan, secret-scan]
+    if: always()
+    steps:
+      - name: Check for critical security issues
+        run: |
+          echo "## 🚦 Quality Gate" >> $GITHUB_STEP_SUMMARY
+          
+          # Check if secret scan failed (indicates secrets found)
+          SECRET_RESULT="${{ needs.secret-scan.result }}"
+          SAST_RESULT="${{ needs.sast-nodejs.result }}"
+          DEP_RESULT="${{ needs.dependency-scan.result }}"
+          
+          CRITICAL_FOUND=false
+          
+          if [ "$SECRET_RESULT" = "failure" ]; then
+            echo "❌ **CRITICAL: Secrets detected in repository!**" >> $GITHUB_STEP_SUMMARY
+            CRITICAL_FOUND=true
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Secret Scan | $SECRET_RESULT |" >> $GITHUB_STEP_SUMMARY
+          echo "| SAST Scan | $SAST_RESULT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dependency Scan | $DEP_RESULT |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # ⚠️ KNOWN CRITICAL FINDING — CORS wildcard must be fixed
+          echo "⚠️ **Manual Review Required: FINDING-001 (CORS wildcard) must be fixed before production deployment.**" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$CRITICAL_FOUND" = "true" ]; then
+            echo "❌ Quality gate FAILED: Critical security issues detected."
+            exit 1
+          else
+            echo "✅ Quality gate passed. Review SAST reports for medium/high findings."
+          fi

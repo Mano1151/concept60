@@ -1,28 +1,41 @@
 import { Router } from 'express';
 import { admin } from '../firebaseAdmin.js';
 import { getFirestore } from '../firebaseAdmin.js';
-import { optionalAuth } from '../middleware/authMiddleware.js';
+import { requireAuth, perUserRateLimit } from '../middleware/authMiddleware.js';
 import { generateConceptResponse } from '../services/claudeService.js';
 
 const router = Router();
+
+// ─── Allowed categories — FIX M-04 ───────────────────────────────────────────
+const ALLOWED_CATEGORIES = new Set([
+  'math', 'mathematics',
+  'science',
+  'technology',
+  'history',
+  'language', 'languages',
+  'business',
+  'art', 'arts & culture', 'arts and culture',
+  'health', 'health & wellness', 'health and wellness',
+  'general', 'other',
+]);
 
 const validatePayload = ({ concept, category }) => {
   if (!concept || typeof concept !== 'string') {
     return 'The concept field is required and must be a string.';
   }
-
   if (!category || typeof category !== 'string') {
     return 'The category field is required and must be a string.';
   }
-
   if (concept.trim().length < 2 || concept.trim().length > 120) {
     return 'Concept length must be between 2 and 120 characters.';
   }
-
   if (category.trim().length < 2 || category.trim().length > 60) {
     return 'Category length must be between 2 and 60 characters.';
   }
-
+  // FIX M-04: validate category against known allowlist
+  if (!ALLOWED_CATEGORIES.has(category.trim().toLowerCase())) {
+    return 'Invalid category value.';
+  }
   return null;
 };
 
@@ -33,8 +46,6 @@ const normalizeArrayField = (field) => {
     .map((item) => item.trim());
 };
 
-// Preserves { term, definition } objects returned by the AI,
-// and also handles legacy plain-string keyword arrays.
 const normalizeKeywordsField = (field) => {
   if (!Array.isArray(field)) return [];
   return field
@@ -54,7 +65,6 @@ const normalizeKeywordsField = (field) => {
 
 const getSavedFallback = async (userId, concept, category) => {
   if (!userId) return null;
-
   const db = getFirestore();
   const snapshot = await db
     .collection('users')
@@ -66,10 +76,7 @@ const getSavedFallback = async (userId, concept, category) => {
     .limit(1)
     .get();
 
-  if (snapshot.empty) {
-    return null;
-  }
-
+  if (snapshot.empty) return null;
   const data = snapshot.docs[0].data();
   return {
     oneLiner: data.oneLiner,
@@ -90,17 +97,14 @@ const saveSearchHistory = async (userId, payload) => {
     keywords: Array.isArray(payload.keywords) ? payload.keywords : [],
     searchedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
-
   await db.collection('users').doc(userId).collection('searchHistory').add(normalized);
 };
 
-router.post('/', optionalAuth, async (req, res) => {
-  console.log('==============================');
-  console.log('CONCEPT REQUEST RECEIVED');
-  console.log('Origin:', req.headers.origin || 'none');
-  console.log('Authorization:', req.headers.authorization ? 'Present' : 'Missing');
-  console.log('Body:', req.body);
-  console.log('==============================');
+// FIX C-02: requireAuth — only authenticated users may consume AI credits
+// FIX H-06: perUserRateLimit — per-UID quota in addition to IP-based limiting
+router.post('/', requireAuth, perUserRateLimit(10), async (req, res) => {
+  // FIX H-02: request body no longer logged (removed console.log('Body:', req.body))
+
   const validationError = validatePayload(req.body);
   if (validationError) {
     return res.status(400).json({ message: validationError });
@@ -113,54 +117,39 @@ router.post('/', optionalAuth, async (req, res) => {
     let rawText = await generateConceptResponse(concept);
     let parsed = null;
 
-    const isValidField = (f) => typeof f === 'string' && f.trim().length > 5 && !/(^|\s)(oops|sorry|error)(\s|$)/i.test(f);
+    const isValidField = (f) =>
+      typeof f === 'string' && f.trim().length > 5 && !/(^|\s)(oops|sorry|error)(\s|$)/i.test(f);
 
     const tryParse = (text) => {
-      if (typeof text !== 'string') {
-        return null;
-      }
-
+      if (typeof text !== 'string') return null;
       const cleaned = text.replace(/```json|```/g, '').trim();
       const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return null;
-      }
-
-      try {
-        return JSON.parse(jsonMatch[0]);
-      } catch (err) {
-        return null;
-      }
+      if (!jsonMatch) return null;
+      try { return JSON.parse(jsonMatch[0]); } catch { return null; }
     };
 
     parsed = tryParse(rawText);
 
     if (!parsed || !isValidField(parsed.oneLiner) || !isValidField(parsed.scenario)) {
-      console.warn('LLM returned invalid or placeholder content. Retrying once without exposing raw response.');
+      console.warn('LLM returned invalid or placeholder content. Retrying once.');
       try {
         const retryText = await generateConceptResponse(concept);
         const retryParsed = tryParse(retryText);
         if (retryParsed && isValidField(retryParsed.oneLiner) && isValidField(retryParsed.scenario)) {
           parsed = retryParsed;
         } else {
-          console.warn('Retry did not produce valid content. Attempting saved response fallback.');
-          parsed = await getSavedFallback(req.user?.uid, concept, category);
-          if (!parsed) {
-            throw new Error('Unable to generate a valid concept explanation at this time.');
-          }
+          parsed = await getSavedFallback(req.user.uid, concept, category);
+          if (!parsed) throw new Error('Unable to generate a valid concept explanation at this time.');
         }
       } catch (retryErr) {
-        console.warn('Retry failed, attempting saved response fallback.');
-        parsed = await getSavedFallback(req.user?.uid, concept, category);
-        if (!parsed) {
-          throw new Error('Unable to generate a valid concept explanation at this time.');
-        }
+        parsed = await getSavedFallback(req.user.uid, concept, category);
+        if (!parsed) throw new Error('Unable to generate a valid concept explanation at this time.');
       }
     }
 
     const { oneLiner, scenario, exampleScenarios, keywords } = parsed || {};
     if (![oneLiner, scenario].every((field) => typeof field === 'string' && field.trim())) {
-      throw new Error('Claude returned incomplete explanation data.');
+      throw new Error('Unable to generate a valid concept explanation at this time.');
     }
 
     const responsePayload = {
@@ -172,17 +161,16 @@ router.post('/', optionalAuth, async (req, res) => {
       keywords: normalizeKeywordsField(keywords),
     };
 
-    if (req.user?.uid) {
-      await saveSearchHistory(req.user.uid, responsePayload);
-    }
+    await saveSearchHistory(req.user.uid, responsePayload);
 
     return res.status(200).json(responsePayload);
   } catch (error) {
-    console.error(error);
-    if (error.message?.includes('instruction-like text')) {
-      return res.status(400).json({ message: error.message });
+    console.error('[concept] generation error:', error.message);
+    // FIX H-01: return generic message — never propagate internal error details
+    if (error.message?.includes('instruction-like text') || error.message?.includes('disallowed')) {
+      return res.status(400).json({ message: 'Input contains disallowed content.' });
     }
-    return res.status(500).json({ message: error.message || 'Unable to generate concept explanation.' });
+    return res.status(500).json({ message: 'Unable to generate concept explanation. Please try again.' });
   }
 });
 
