@@ -11,6 +11,7 @@ import Button from '../components/ui/Button';
 import { fontClass, modeClass, sizeClass } from '../utils/accessibility';
 import TOPIC_DESCRIPTIONS from '../data/topicDescriptions';
 import { getAccessibilitySettings, addRecentSearch, getLearningProgress, updateLearningProgress } from '../utils/localStorage';
+import { useAuth } from '../context/AuthContext';
 
 function splitSentences(text) {
   return text
@@ -31,6 +32,7 @@ const defaultSettings = {
 function Result() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const initialConcept = location.state?.concept || '';
   const initialCategory = location.state?.category || 'General';
 
@@ -53,7 +55,20 @@ function Result() {
   const progressRef = useRef(false);
   const { showToast } = useToast();
 
+  // Redirect to login if Firebase auth has loaded and user is not signed in
   useEffect(() => {
+    if (!authLoading && !user) {
+      navigate('/login', { replace: true });
+    }
+  }, [authLoading, user, navigate]);
+
+  useEffect(() => {
+    // Wait for Firebase auth to finish initializing before making authenticated requests.
+    // Without this guard, auth.currentUser is null on first render and the request
+    // goes out without a Bearer token, causing 401 "Authentication required".
+    if (authLoading || !user) {
+      return;
+    }
     if (!concept) {
       return;
     }
@@ -151,9 +166,10 @@ function Result() {
     fetchResult();
 
     return () => controller.abort();
-  }, [concept, category]);
+  }, [concept, category, authLoading, user]);
 
   useEffect(() => {
+    if (authLoading || !user) return;
     if (!concept) return;
 
     const controller = new AbortController();
@@ -183,7 +199,7 @@ function Result() {
     fetchVideo();
 
     return () => controller.abort();
-  }, [concept, category]);
+  }, [concept, category, authLoading, user]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
