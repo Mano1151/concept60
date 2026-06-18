@@ -21,6 +21,13 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
 // Treat obvious placeholder values as absent (e.g. 'your_openai_api_key')
 const isRealKey = (k) => typeof k === 'string' && k.trim() && !k.trim().toLowerCase().startsWith('your_');
 
+const GROQ_KEY = process.env.GROQ_API_KEY;
+
+const groqClient = GROQ_KEY
+  ? new Groq({
+    apiKey: GROQ_KEY,
+  })
+  : null;
 const anthropicClient = isRealKey(ANTHROPIC_KEY) ? new Anthropic({ apiKey: ANTHROPIC_KEY }) : null;
 const openaiClient = isRealKey(OPENAI_KEY) ? new OpenAI({ apiKey: OPENAI_KEY }) : null;
 const genAI = isRealKey(GEMINI_KEY)
@@ -80,7 +87,7 @@ if (PROVIDER === 'anthropic' && !anthropicClient) {
 }
 
 console.log(`AI Provider: ${ACTIVE_PROVIDER}${ACTIVE_PROVIDER === 'ollama' ? ` (model: ${OLLAMA_MODEL}, base: ${OLLAMA_BASE_URL})` : ''}`);
-
+console.log("ACTIVE_PROVIDER =", ACTIVE_PROVIDER);
 const PROMPT_INJECTION_PATTERNS = [
   /ignore (all )?previous instructions/i,
   /disregard (all )?prior instructions/i,
@@ -228,6 +235,29 @@ Rules:
 }
 
 // ─── Ollama (local model via OpenAI-compatible API) ───────────────────────────
+async function generateGroqResponse(prompt) {
+  if (!groqClient) {
+    throw new Error(
+      "Groq client not initialized. Check GROQ_API_KEY."
+    );
+  }
+
+  const response =
+    await groqClient.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      temperature: 0.2,
+    });
+
+  return (
+    response?.choices?.[0]?.message?.content || ""
+  );
+}
 
 async function generateOllamaResponse(prompt) {
   try {
@@ -357,6 +387,45 @@ async function generateGeminiResponse(prompt) {
 async function generateGenericResponse(prompt) {
   // Use ACTIVE_PROVIDER which may have been adjusted at startup if the selected
   // provider lacked a valid API key.
+
+  if (ACTIVE_PROVIDER === 'groq') {
+    try {
+      return await runAndValidate(() =>
+        generateGroqResponse(prompt)
+      );
+    } catch (error) {
+      console.warn(
+        'Groq generic response failed:',
+        error.message
+      );
+
+      if (ollamaClient) {
+        return await runAndValidate(() =>
+          generateOllamaResponse(prompt)
+        );
+      }
+
+      if (openaiClient) {
+        return await runAndValidate(() =>
+          generateOpenAIResponse(prompt)
+        );
+      }
+
+      if (anthropicClient) {
+        return await runAndValidate(() =>
+          generateAnthropicResponse(prompt)
+        );
+      }
+
+      if (geminiModel) {
+        return await runAndValidate(() =>
+          generateGeminiResponse(prompt)
+        );
+      }
+
+      throw error;
+    }
+  }
 
   if (ACTIVE_PROVIDER === 'ollama') {
     try {
