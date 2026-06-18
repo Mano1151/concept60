@@ -13,7 +13,7 @@ apiClient.interceptors.request.use(async (config) => {
   const currentUser = auth.currentUser;
   if (currentUser && config.headers) {
     try {
-      const token = await getIdToken(currentUser, true);
+      const token = await getIdToken(currentUser);
       config.headers.Authorization = `Bearer ${token}`;
     } catch (error) {
       console.warn('Skipping auth token due to invalid/expired token:', error?.message || error);

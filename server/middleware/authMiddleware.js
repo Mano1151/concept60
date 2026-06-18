@@ -13,10 +13,11 @@ export async function optionalAuth(req, res, next) {
   }
 
   try {
-    const decodedToken = await verifyIdToken(token, true);
+    const decodedToken = await verifyIdToken(token);
     req.user = decodedToken;
     return next();
   } catch (error) {
+    console.error('optionalAuth verification failed:', error);
     // Token was provided but is invalid or revoked — reject with 401.
     return res.status(401).json({ message: 'Invalid, revoked, or expired auth token.' });
   }
@@ -32,10 +33,11 @@ export async function requireAuth(req, res, next) {
   }
 
   try {
-    const decodedToken = await verifyIdToken(token, true);
+    const decodedToken = await verifyIdToken(token);
     req.user = decodedToken;
     return next();
   } catch (error) {
+    console.error('requireAuth verification failed:', error);
     return res.status(401).json({ message: 'Invalid, revoked, or expired auth token.' });
   }
 }
