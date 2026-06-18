@@ -636,6 +636,29 @@ export async function generatePdfAnswer(question, pdfText) {
 export async function generateConceptResponse(concept) {
   const prompt = buildPrompt(concept);
 
+    if (ACTIVE_PROVIDER === 'groq') {
+    try {
+      return String((await generateGroqResponse(prompt)) || '').trim();
+      
+    } catch (error) {
+      console.warn('Groq error, attempting fallback:', error.message);
+
+      if (ollamaClient) {
+        try {
+          return String((await generateOllamaResponse(prompt)) || '').trim();
+        } catch {}
+      }
+
+      if (openaiClient) {
+        try {
+          return String((await generateOpenAIResponse(prompt)) || '').trim();
+        } catch {}
+      }
+
+      throw error;
+    }
+  }
+
   if (ACTIVE_PROVIDER === 'ollama') {
     try {
       return String((await generateOllamaResponse(prompt)) || '').trim();
@@ -753,7 +776,25 @@ export async function generateVideoResponse(concept) {
   const prompt = buildStoryboardPrompt(concept);
   let rawText = '';
 
-  if (ACTIVE_PROVIDER === 'ollama') {
+    if (ACTIVE_PROVIDER === 'groq') {
+    try {
+      rawText = await generateGroqResponse(prompt);
+    } catch (error) {
+      console.warn(
+        'Groq error in video generation:',
+        error.message
+      );
+
+      if (ollamaClient) {
+        rawText = await generateOllamaResponse(prompt);
+      } else if (openaiClient) {
+        rawText = await generateOpenAIResponse(prompt);
+      } else {
+        throw error;
+      }
+    }
+  }
+  else if (ACTIVE_PROVIDER === 'ollama') {
     try {
       rawText = await generateOllamaResponse(prompt);
     } catch (error) {
