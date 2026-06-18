@@ -3,22 +3,24 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: '#0F0F0F',
-        panel: '#1A1A1A',
-        accent: '#6C63FF',
-        'accent-cyan': '#00E6FF',
-        'glass-hex': 'rgba(255,255,255,0.06)'
+        // Point all theme colors at CSS custom properties so they
+        // change dynamically when html[data-theme='...'] switches.
+        bg:    'rgb(var(--color-bg) / <alpha-value>)',
+        panel: 'rgb(var(--color-panel) / <alpha-value>)',
+        accent:'rgb(var(--accent) / <alpha-value>)',
+        'accent-cyan': 'rgb(var(--accent-cyan) / <alpha-value>)',
       },
       fontFamily: {
-        inter: ['Inter', 'system-ui', 'sans-serif'],
+        inter:   ['Inter', 'system-ui', 'sans-serif'],
         poppins: ['Poppins', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        soft: '0 20px 60px rgba(2,6,23,0.45)',
-        'soft-light': '0 8px 30px rgba(2,6,23,0.18)'
+        soft:       '0 20px 60px rgba(2,6,23,0.45)',
+        'soft-light':'0 8px 30px rgba(2,6,23,0.18)',
       },
       backgroundImage: {
-        'accent-gradient': 'linear-gradient(90deg, rgba(108,99,255,1) 0%, rgba(34,211,238,1) 100%)'
+        'accent-gradient':
+          'linear-gradient(90deg,rgb(var(--accent)) 0%,rgb(var(--accent-cyan)) 100%)',
       },
     },
   },
