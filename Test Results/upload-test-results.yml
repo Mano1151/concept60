@@ -1,0 +1,19 @@
+name: Upload All Test Results
+
+on:
+  workflow_dispatch:
+
+jobs:
+  upload-results:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Upload Test Results Folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: All_Test_Results
+          path: 'Test Results/'
+          retention-days: 90
