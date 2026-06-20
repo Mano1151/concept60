@@ -4,6 +4,9 @@ import sys
 
 def main():
     try:
+        with open('autocannon_result.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except UnicodeDecodeError:
         with open('autocannon_result.json', 'r', encoding='utf-16') as f:
             data = json.load(f)
     except Exception as e:
