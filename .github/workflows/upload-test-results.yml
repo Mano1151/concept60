@@ -11,9 +11,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         
-      - name: Upload Test Results Folder
+      - name: Upload Selenium E2E Test Report
         uses: actions/upload-artifact@v4
         with:
-          name: All_Test_Results
-          path: 'Test Results/'
+          name: Selenium_E2E_Test_Report_Final
+          path: 'Test Results/Selenium_E2E_Test_Report_Final.xlsx'
+          retention-days: 90
+
+      - name: Upload Vulnerability Test Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vulnerability_test
+          path: 'Test Results/Vulnerability test.xlsx'
           retention-days: 90
