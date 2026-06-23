@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { auth, googleProvider } from '../firebase';
+import { saveUserInfo } from '../services/firestore';
 import {
   getIdToken,
   onAuthStateChanged,
@@ -32,6 +33,9 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+      if (currentUser) {
+        saveUserInfo(currentUser).catch(err => console.error("Error saving user info:", err));
+      }
     });
     return unsubscribe;
   }, []);

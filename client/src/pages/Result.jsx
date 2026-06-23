@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import apiClient from '../services/api';
+import { saveSearchToFirestore } from '../services/firestore';
 import LoadingSkeleton from '../components/LoadingSkeleton';
 import TimerAnimation from '../components/TimerAnimation';
 import VoicePlayer from '../components/VoicePlayer';
@@ -343,19 +344,32 @@ function Result() {
     return `${data.concept}\n\n${data.scenario}${examples}${keywords}`;
   };
 
-  const handleSaveLesson = () => {
+  const handleSaveLesson = async () => {
     if (lessonSaved) {
       showToast('This lesson is already saved.', 'info');
       return;
     }
 
-    addRecentSearch({
+    const payload = {
       concept,
       category,
       oneLiner: data.oneLiner,
       scenario: data.scenario,
+      exampleScenarios: data.exampleScenarios,
+      keywords: data.keywords,
       searchedAt: new Date().toISOString(),
-    });
+    };
+
+    addRecentSearch(payload);
+    
+    if (user) {
+      try {
+        await saveSearchToFirestore(user.uid, payload);
+      } catch (err) {
+        console.error('Error saving to Firestore:', err);
+      }
+    }
+    
     setLessonSaved(true);
     updateProgressState({ lessonsSaved: 1 });
     showToast('Lesson saved to your learning library.', 'success');
