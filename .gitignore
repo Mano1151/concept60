@@ -14,3 +14,4 @@ server/node_modules/
 __pycache__/
 *.pyc
 ~$*.xlsx
+start.py
