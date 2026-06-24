@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { fetchSavedSearches } from '../services/firestore';
-import { getLearningProgress, getRecentSearches } from '../utils/localStorage';
+import { getLearningProgress } from '../utils/localStorage';
 import { auth } from '../firebase';
 import { updateProfile, reload } from 'firebase/auth';
 import Button from '../components/ui/Button';
@@ -44,7 +44,8 @@ function calculateDayStreak(dayCounts) {
   for (let offset = 0; offset < 30; offset += 1) {
     const day = new Date(today);
     day.setDate(day.getDate() - offset);
-    const key = day.toISOString();
+    // Use getMidnightKey (numeric timestamp) — must match buildDailyCounts key type
+    const key = getMidnightKey(day);
     if (dayCounts.has(key) && dayCounts.get(key) > 0) {
       streak += 1;
       continue;
@@ -172,15 +173,14 @@ function Profile() {
   }
 
   const learningProgress = getLearningProgress();
-  const localSearches = getRecentSearches(user.uid);
-  const allSearches = user
-    ? [...savedSearches, ...localSearches].filter((entry) => parseTimestamp(entry.searchedAt) !== null)
-    : localSearches.filter((entry) => parseTimestamp(entry.searchedAt) !== null);
-  const lessonsSaved = user ? savedSearches.length + localSearches.length : localSearches.length;
+  // Use Firestore saved searches as the single source of truth to avoid double-counting
+  // (local searches get synced to Firestore, so only count Firestore entries)
+  const allSearches = savedSearches.filter((entry) => parseTimestamp(entry.searchedAt) !== null);
+  const lessonsSaved = savedSearches.length;
   const learnedConcepts = Math.max(learningProgress.conceptsReviewed, allSearches.length);
   const level = Math.max(1, Math.ceil(learnedConcepts / 4));
   const currentXP =
-    learningProgress.conceptsReviewed * 60 +
+    learnedConcepts * 60 +
     learningProgress.quizzesCompleted * 25 +
     learningProgress.pdfQuestionsAnswered * 20 +
     lessonsSaved * 15;
@@ -188,7 +188,10 @@ function Profile() {
   const dayCounts = buildDailyCounts(allSearches);
   const dayStreak = calculateDayStreak(dayCounts);
   const weeklyProgress = buildWeeklyProgress(dayCounts);
-  const learningTime = Math.max(Math.round(learningProgress.conceptsReviewed * 6), 10);
+  // Minutes learned: each concept search ≈ 6 min average read time
+  const learningTime = allSearches.length > 0
+    ? Math.max(Math.round(allSearches.length * 6), 10)
+    : Math.max(Math.round(learningProgress.conceptsReviewed * 6), 10);
 
   const profileData = {
     name: displayName,
@@ -207,28 +210,7 @@ function Profile() {
 
   const xpProgress = Math.min(100, (profileData.currentXP / profileData.nextLevelXP) * 100);
 
-  const achievementData = [
-    {
-      icon: '🏆',
-      title: 'First Concept',
-      subtitle: 'Learned your first concept',
-    },
-    {
-      icon: '🔥',
-      title: `${profileData.dayStreak}-Day Streak`,
-      subtitle: `Learned for ${profileData.dayStreak} consecutive days`,
-    },
-    {
-      icon: '📈',
-      title: `Level ${profileData.level}`,
-      subtitle: `Reached Level ${profileData.level}`,
-    },
-    {
-      icon: '🎯',
-      title: `${profileData.quizzesCompleted} Quizzes`,
-      subtitle: `Completed ${profileData.quizzesCompleted} quizzes`,
-    },
-  ];
+
 
   return (
     <section className="space-y-6">
@@ -374,22 +356,7 @@ function Profile() {
         </div>
       </div>
 
-      <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft">
-        <h4 className="text-lg font-semibold text-white mb-4">Achievements</h4>
-        <div className="grid gap-4 md:grid-cols-2">
-          {achievementData.map((achievement) => (
-            <div key={achievement.title} className="flex items-center gap-3">
-              <div className="h-12 w-12 rounded-full bg-white/10 flex items-center justify-center">
-                <span className="text-xl">{achievement.icon}</span>
-              </div>
-              <div>
-                <p className="font-semibold text-white">{achievement.title}</p>
-                <p className="text-sm text-slate-300">{achievement.subtitle}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+
 
       <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft">
         <button
