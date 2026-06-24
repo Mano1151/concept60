@@ -35,27 +35,38 @@ function Saved() {
 
   useEffect(() => {
     const loadSaved = async () => {
-      const localSearches = getRecentSearches();
-      setItems(localSearches);
-      setStatus(localSearches.length > 0 ? 'success' : 'loading');
-
       if (!user) {
+        // Guest: show user-scoped (guest) localStorage items only
+        const guestSearches = getRecentSearches(null);
+        setItems(guestSearches);
+        setStatus('success');
         return;
       }
+
+      // Logged-in user: load user-scoped localStorage items while cloud loads
+      const localSearches = getRecentSearches(user.uid);
+      setItems(localSearches);
+      setStatus(localSearches.length > 0 ? 'success' : 'loading');
 
       setLoadingCloud(true);
 
       try {
         const cloudSearches = await fetchSavedSearches();
         const sortedCloud = sortByDateDesc(cloudSearches);
-        setItems(sortedCloud);
 
-        if (cloudSearches.length === 0 && localSearches.length > 0) {
+        if (sortedCloud.length > 0) {
+          // Cloud data is the source of truth for logged-in users
+          setItems(sortedCloud);
+        } else if (localSearches.length > 0) {
+          // Fallback: show local items if cloud is empty
           setItems(localSearches);
+        } else {
+          setItems([]);
         }
 
         setStatus('success');
       } catch (err) {
+        console.error('[Saved] failed to load cloud history:', err);
         setStatus('success');
       } finally {
         setLoadingCloud(false);
@@ -92,7 +103,7 @@ function Saved() {
     const isLocalOnly = item.id === localId || !user;
 
     if (isLocalOnly) {
-      removeRecentSearch(localId);
+      removeRecentSearch(localId, user?.uid ?? null);
       setItems((current) => current.filter((entry) => entry.id !== item.id));
       showToast('Removed local search', 'success');
       return;
@@ -127,6 +138,9 @@ function Saved() {
                 ? 'Your search history is stored securely in your account and sorted by most recent.'
                 : 'Local recent searches are shown here. Sign in to sync saved concepts across devices.'}
             </p>
+            {loadingCloud && (
+              <p className="mt-1 text-xs text-slate-500">Syncing with your account…</p>
+            )}
           </div>
           <Button variant="primary" type="button" onClick={() => navigate('/')} className="px-5 py-3">
             Search a new concept

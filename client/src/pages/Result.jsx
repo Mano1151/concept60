@@ -214,16 +214,22 @@ function Result() {
   }, [settings.readingMode]);
 
   useEffect(() => {
-    if (data) {
-      addRecentSearch({
+    if (data && user) {
+      const payload = {
         concept,
         category,
         oneLiner: data.oneLiner,
         scenario: data.scenario,
         searchedAt: new Date().toISOString(),
-      });
+      };
+      // Save to user-scoped localStorage
+      addRecentSearch(payload, user.uid);
+      // Auto-save to Firestore so Saved tab shows this concept with date/time
+      saveSearchToFirestore(user.uid, payload).catch((err) =>
+        console.error('Auto-save to Firestore failed:', err)
+      );
     }
-  }, [data, concept, category]);
+  }, [data, concept, category, user]);
 
   useEffect(() => {
     if (data && !progressRef.current) {
@@ -360,7 +366,7 @@ function Result() {
       searchedAt: new Date().toISOString(),
     };
 
-    addRecentSearch(payload);
+    addRecentSearch(payload, user?.uid ?? null);
     
     if (user) {
       try {

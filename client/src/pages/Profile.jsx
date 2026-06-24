@@ -172,7 +172,7 @@ function Profile() {
   }
 
   const learningProgress = getLearningProgress();
-  const localSearches = getRecentSearches();
+  const localSearches = getRecentSearches(user.uid);
   const allSearches = user
     ? [...savedSearches, ...localSearches].filter((entry) => parseTimestamp(entry.searchedAt) !== null)
     : localSearches.filter((entry) => parseTimestamp(entry.searchedAt) !== null);

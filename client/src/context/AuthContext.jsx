@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { auth, googleProvider } from '../firebase';
 import { saveUserInfo } from '../services/firestore';
+import { clearRecentSearches } from '../utils/localStorage';
 import {
   getIdToken,
   onAuthStateChanged,
@@ -90,6 +91,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Clear this user's scoped localStorage before signing out
+    const uid = auth.currentUser?.uid ?? null;
+    clearRecentSearches(uid);
     await signOut(auth);
     setUser(null);
   }, []);
