@@ -3,16 +3,26 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { fetchSavedSearches } from '../services/firestore';
-import { getLearningProgress } from '../utils/localStorage';
 import { auth } from '../firebase';
 import { updateProfile, reload } from 'firebase/auth';
 import Button from '../components/ui/Button';
 
+// ─── Timestamp helpers ──────────────────────────────────────────────────────
+// Handles:
+//   • Firestore Timestamp object (client SDK) — has .toDate()
+//   • Serialized Firestore Timestamp from REST/Admin (has ._seconds)
+//   • ISO string / any Date-parseable string
 function parseTimestamp(searchedAt) {
   if (!searchedAt) return null;
+  // Firestore client SDK Timestamp
   if (typeof searchedAt.toDate === 'function') {
     return searchedAt.toDate().getTime();
   }
+  // Serialized Admin Timestamp: { _seconds, _nanoseconds }
+  if (searchedAt._seconds != null) {
+    return searchedAt._seconds * 1000;
+  }
+  // ISO string or similar
   const parsed = Date.parse(searchedAt);
   return Number.isNaN(parsed) ? null : parsed;
 }
@@ -41,19 +51,18 @@ function calculateDayStreak(dayCounts) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  for (let offset = 0; offset < 30; offset += 1) {
+  for (let offset = 0; offset < 365; offset += 1) {
     const day = new Date(today);
     day.setDate(day.getDate() - offset);
-    // Use getMidnightKey (numeric timestamp) — must match buildDailyCounts key type
     const key = getMidnightKey(day);
     if (dayCounts.has(key) && dayCounts.get(key) > 0) {
       streak += 1;
+    } else if (offset === 0) {
+      // Today empty — still check yesterday before breaking
       continue;
+    } else {
+      break;
     }
-    if (offset === 0) {
-      continue; // allow today to be empty and still count streak from yesterday
-    }
-    break;
   }
 
   return streak;
@@ -71,21 +80,29 @@ function buildWeeklyProgress(dayCounts) {
     day.setDate(today.getDate() - offset);
     const key = getMidnightKey(day);
     const count = dayCounts.get(key) || 0;
-    values.push({
-      label: weekdays[day.getDay()],
-      count,
-    });
+    values.push({ label: weekdays[day.getDay()], count });
     maxCount = Math.max(maxCount, count);
   }
 
   if (maxCount === 0) {
-    return values.map((value) => ({ ...value, height: 0 }));
+    return values.map((v) => ({ ...v, height: 0 }));
   }
 
-  return values.map((value) => ({
-    ...value,
-    height: value.count === 0 ? 0 : Math.max(14, Math.round((value.count / maxCount) * 100)),
+  return values.map((v) => ({
+    ...v,
+    height: v.count === 0 ? 0 : Math.max(14, Math.round((v.count / maxCount) * 100)),
   }));
+}
+
+// ─── Deduplicate: keep only the most-recent entry per concept+category ───────
+function deduplicateSearches(entries) {
+  const seen = new Map();
+  // entries are already sorted desc by server — first occurrence = most recent
+  for (const entry of entries) {
+    const key = `${(entry.concept || '').toLowerCase().trim()}||${(entry.category || 'general').toLowerCase().trim()}`;
+    if (!seen.has(key)) seen.set(key, entry);
+  }
+  return Array.from(seen.values());
 }
 
 function Profile() {
@@ -93,46 +110,38 @@ function Profile() {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [savedSearches, setSavedSearches] = useState([]);
-  const [isLoadingSavedHistory, setIsLoadingSavedHistory] = useState(true);
+  const [allSearches, setAllSearches] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState('');
   const [displayName, setDisplayName] = useState('');
 
+  // ── Load live Firestore history ────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
-
-    const loadSavedSearches = async () => {
-      if (!user) {
-        setIsLoadingSavedHistory(false);
-        return;
-      }
-
+    const load = async () => {
+      if (!user) { setIsLoading(false); return; }
       try {
-        const saved = await fetchSavedSearches();
+        const raw = await fetchSavedSearches();
         if (mounted) {
-          setSavedSearches(saved);
+          const deduped = deduplicateSearches(raw);
+          setAllSearches(deduped.filter((e) => parseTimestamp(e.searchedAt) !== null));
         }
-      } catch (error) {
-        console.error('Unable to load saved searches for profile:', error);
+      } catch (err) {
+        console.error('Profile: failed to load history', err);
       } finally {
-        if (mounted) {
-          setIsLoadingSavedHistory(false);
-        }
+        if (mounted) setIsLoading(false);
       }
     };
-
-    loadSavedSearches();
-
-    return () => {
-      mounted = false;
-    };
+    load();
+    return () => { mounted = false; };
   }, [user]);
 
+  // ── Sync display name from Firebase Auth ───────────────────────────────────
   useEffect(() => {
     const deriveName = (u) => {
       if (!u) return '';
-      if (u.displayName && u.displayName.trim()) return u.displayName;
+      if (u.displayName?.trim()) return u.displayName;
       if (u.email) return u.email.split('@')[0];
       return '';
     };
@@ -154,6 +163,7 @@ function Profile() {
     }
   };
 
+  // ── Not signed in ──────────────────────────────────────────────────────────
   if (!user) {
     return (
       <section className="space-y-6">
@@ -172,69 +182,44 @@ function Profile() {
     );
   }
 
-  const learningProgress = getLearningProgress();
-  // Use Firestore saved searches as the single source of truth to avoid double-counting
-  // (local searches get synced to Firestore, so only count Firestore entries)
-  const allSearches = savedSearches.filter((entry) => parseTimestamp(entry.searchedAt) !== null);
-  const lessonsSaved = savedSearches.length;
-  const learnedConcepts = Math.max(learningProgress.conceptsReviewed, allSearches.length);
-  const level = Math.max(1, Math.ceil(learnedConcepts / 4));
-  const currentXP =
-    learnedConcepts * 60 +
-    learningProgress.quizzesCompleted * 25 +
-    learningProgress.pdfQuestionsAnswered * 20 +
-    lessonsSaved * 15;
-  const nextLevelXP = Math.max(500, level * 500);
-  const dayCounts = buildDailyCounts(allSearches);
-  const dayStreak = calculateDayStreak(dayCounts);
+  // ── Derive all stats from live Firestore data only ─────────────────────────
+  const totalConcepts  = allSearches.length;
+  const minutesLearned = totalConcepts * 6; // ~6 min avg read per concept
+  const currentXP      = totalConcepts * 60;
+  const level          = Math.max(1, Math.ceil(totalConcepts / 4));
+  const nextLevelXP    = Math.max(500, level * 500);
+  const xpProgress     = Math.min(100, (currentXP / nextLevelXP) * 100);
+
+  const dayCounts      = buildDailyCounts(allSearches);
+  const dayStreak      = calculateDayStreak(dayCounts);
   const weeklyProgress = buildWeeklyProgress(dayCounts);
-  // Minutes learned: each concept search ≈ 6 min average read time
-  const learningTime = allSearches.length > 0
-    ? Math.max(Math.round(allSearches.length * 6), 10)
-    : Math.max(Math.round(learningProgress.conceptsReviewed * 6), 10);
-
-  const profileData = {
-    name: displayName,
-    email: user.email,
-    level,
-    currentXP,
-    nextLevelXP,
-    dayStreak,
-    learnedConcepts,
-    lessonsSaved,
-    learningTime,
-    quizzesCompleted: learningProgress.quizzesCompleted,
-    pdfQuestionsAnswered: learningProgress.pdfQuestionsAnswered,
-    weeklyProgress,
-  };
-
-  const xpProgress = Math.min(100, (profileData.currentXP / profileData.nextLevelXP) * 100);
-
-
 
   return (
     <section className="space-y-6">
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold text-white">Profile</h2>
-              <p className="mt-2 text-slate-300">Track your learning progress and achievements.</p>
-              {isLoadingSavedHistory && (
-                <p className="mt-2 text-sm text-slate-400">Loading your saved history in the background…</p>
-              )}
-            </div>
-          </div>
 
+      {/* ── Top row: profile card + weekly chart ── */}
+      <div className="grid gap-6 md:grid-cols-2">
+
+        {/* Profile card */}
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft">
+          <h2 className="text-2xl font-semibold text-white">Profile</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Stats are calculated from your live Firestore search history.
+          </p>
+          {isLoading && (
+            <p className="mt-2 text-sm text-slate-500 animate-pulse">Loading your data…</p>
+          )}
+
+          {/* Avatar + name */}
           <div className="mt-6 flex items-center gap-4">
-            <div className="h-16 w-16 rounded-full bg-accent flex items-center justify-center text-2xl font-bold text-white">
-              {profileData.name ? profileData.name.charAt(0).toUpperCase() : ''}
+            <div className="h-16 w-16 rounded-full bg-accent flex items-center justify-center text-2xl font-bold text-white select-none">
+              {displayName ? displayName.charAt(0).toUpperCase() : '?'}
             </div>
             <div>
               <div className="flex items-center gap-3">
                 {!isEditingName ? (
                   <>
-                    <h3 className="text-xl font-semibold text-white">{profileData.name}</h3>
+                    <h3 className="text-xl font-semibold text-white">{displayName}</h3>
                     <Button variant="ghost" className="px-2 py-1 text-sm" onClick={() => setIsEditingName(true)}>Edit</Button>
                   </>
                 ) : (
@@ -250,10 +235,7 @@ function Profile() {
                       className="px-3 py-2"
                       onClick={async () => {
                         const newName = editingName?.trim();
-                        if (!newName) {
-                          showToast('Name cannot be empty.', 'error');
-                          return;
-                        }
+                        if (!newName) { showToast('Name cannot be empty.', 'error'); return; }
                         try {
                           await updateProfile(auth.currentUser, { displayName: newName });
                           await reload(auth.currentUser);
@@ -268,96 +250,88 @@ function Profile() {
                     >
                       Save
                     </Button>
-                    <Button variant="ghost" className="px-3 py-2" onClick={() => { setIsEditingName(false); setEditingName(displayName); }}>Cancel</Button>
+                    <Button
+                      variant="ghost"
+                      className="px-3 py-2"
+                      onClick={() => { setIsEditingName(false); setEditingName(displayName); }}
+                    >
+                      Cancel
+                    </Button>
                   </div>
                 )}
               </div>
-              <p className="text-slate-300">{profileData.email}</p>
+              <p className="text-slate-300">{user.email}</p>
             </div>
           </div>
 
+          {/* XP / Level */}
           <div className="mt-6">
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-accent/20 px-3 py-1 text-sm font-semibold text-accent">
-                Level {profileData.level}
+                Level {level}
               </span>
-              <span className="text-sm text-slate-400">
-                {profileData.currentXP} XP / {profileData.nextLevelXP} XP
-              </span>
+              <span className="text-sm text-slate-400">{currentXP} XP / {nextLevelXP} XP</span>
             </div>
             <div className="mt-4 flex justify-between text-sm text-slate-300 mb-2">
-              <span>Progress to Level {profileData.level + 1}</span>
-              <span>{profileData.nextLevelXP - profileData.currentXP} XP left</span>
+              <span>Progress to Level {level + 1}</span>
+              <span>{Math.max(0, nextLevelXP - currentXP)} XP left</span>
             </div>
             <div className="h-2 bg-white/10 rounded-full overflow-hidden">
               <div
-                className="h-full bg-accent transition-all duration-300"
+                className="h-full bg-accent transition-all duration-500"
                 style={{ width: `${xpProgress}%` }}
               />
             </div>
           </div>
         </div>
 
+        {/* Weekly activity chart */}
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft">
-          <h4 className="text-lg font-semibold text-white mb-4">Weekly Progress</h4>
-          <div className="space-y-3">
-            <div className="flex items-end gap-2 h-32">
-              {profileData.weeklyProgress.map((item, index) => (
-                <div key={index} className="flex-1 flex flex-col items-center">
-                  <div className="text-[10px] font-semibold text-slate-300 mb-2">
-                    {item.count > 0 ? item.count : ''}
-                  </div>
-                  <div className="relative h-20 w-full rounded-full bg-white/10 overflow-hidden">
-                    <div
-                      className="absolute bottom-0 left-0 w-full rounded-t bg-accent/60 transition-all duration-300"
-                      style={{ height: `${item.height}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-slate-400 mt-2">{item.label}</span>
+          <h4 className="text-lg font-semibold text-white mb-4">Weekly Activity</h4>
+          <div className="flex items-end gap-2 h-32">
+            {weeklyProgress.map((item, index) => (
+              <div key={index} className="flex-1 flex flex-col items-center">
+                <div className="text-[10px] font-semibold text-slate-300 mb-2">
+                  {item.count > 0 ? item.count : ''}
                 </div>
-              ))}
-            </div>
+                <div className="relative h-20 w-full rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="absolute bottom-0 left-0 w-full rounded-t bg-accent/60 transition-all duration-300"
+                    style={{ height: `${item.height}%` }}
+                  />
+                </div>
+                <span className="text-xs text-slate-400 mt-2">{item.label}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-4">
+      {/* ── Stats ── */}
+      <div className="grid gap-6 grid-cols-2 md:grid-cols-4">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft text-center">
           <div className="text-3xl mb-2">🔥</div>
-          <div className="text-2xl font-bold text-white">{profileData.dayStreak}</div>
+          <div className="text-2xl font-bold text-white">{isLoading ? '…' : dayStreak}</div>
           <div className="text-sm text-slate-300">Day Streak</div>
         </div>
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft text-center">
           <div className="text-3xl mb-2">📚</div>
-          <div className="text-2xl font-bold text-white">{profileData.learnedConcepts}</div>
+          <div className="text-2xl font-bold text-white">{isLoading ? '…' : totalConcepts}</div>
           <div className="text-sm text-slate-300">Concepts Reviewed</div>
         </div>
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft text-center">
           <div className="text-3xl mb-2">📝</div>
-          <div className="text-2xl font-bold text-white">{profileData.lessonsSaved}</div>
+          <div className="text-2xl font-bold text-white">{isLoading ? '…' : totalConcepts}</div>
           <div className="text-sm text-slate-300">Lessons Saved</div>
         </div>
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft text-center">
-          <div className="text-3xl mb-2">🧠</div>
-          <div className="text-2xl font-bold text-white">{profileData.quizzesCompleted}</div>
-          <div className="text-sm text-slate-300">Quizzes Completed</div>
-        </div>
-      </div>
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft text-center">
-          <div className="text-3xl mb-2">📄</div>
-          <div className="text-2xl font-bold text-white">{profileData.pdfQuestionsAnswered}</div>
-          <div className="text-sm text-slate-300">PDF Questions Answered</div>
-        </div>
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft text-center">
           <div className="text-3xl mb-2">⏱️</div>
-          <div className="text-2xl font-bold text-white">{profileData.learningTime}</div>
+          <div className="text-2xl font-bold text-white">{isLoading ? '…' : minutesLearned}</div>
           <div className="text-sm text-slate-300">Minutes Learned</div>
         </div>
       </div>
 
-
-
+      {/* ── Sign Out ── */}
       <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft">
         <button
           type="button"
@@ -365,9 +339,10 @@ function Profile() {
           disabled={isLoggingOut}
           className="w-full rounded-3xl bg-rose-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isLoggingOut ? 'Signing out...' : 'Sign Out'}
+          {isLoggingOut ? 'Signing out…' : 'Sign Out'}
         </button>
       </div>
+
     </section>
   );
 }

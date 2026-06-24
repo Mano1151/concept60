@@ -9,67 +9,66 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingSkeleton from '../components/LoadingSkeleton';
 import { getRecentSearches, removeRecentSearch } from '../utils/localStorage';
 
+// ─── Deduplicate: keep the most-recent entry per concept+category ─────────────
+function deduplicateItems(entries) {
+  const seen = new Map();
+  for (const entry of entries) {
+    const key = `${(entry.concept || '').toLowerCase().trim()}||${(entry.category || 'general').toLowerCase().trim()}`;
+    if (!seen.has(key)) seen.set(key, entry);
+  }
+  return Array.from(seen.values());
+}
+
+function getSearchTimestamp(item) {
+  if (!item.searchedAt) return 0;
+  // Firestore client SDK Timestamp
+  if (typeof item.searchedAt.toDate === 'function') {
+    return item.searchedAt.toDate().getTime();
+  }
+  // Serialized Admin Timestamp: { _seconds, _nanoseconds }
+  if (item.searchedAt._seconds != null) {
+    return item.searchedAt._seconds * 1000;
+  }
+  const parsed = Date.parse(item.searchedAt);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+const sortByDateDesc = (list) =>
+  [...list].sort((a, b) => getSearchTimestamp(b) - getSearchTimestamp(a));
+
 function Saved() {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState('loading');
-  const [loadingCloud, setLoadingCloud] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const { showToast } = useToast();
   const navigate = useNavigate();
 
-  const getItemKey = (item) =>
-    `${item.concept?.toLowerCase().trim() || ''}-${item.category?.toLowerCase().trim() || 'general'}`;
-
-  const getSearchTimestamp = (item) => {
-    if (item.searchedAt?.toDate) {
-      return item.searchedAt.toDate().getTime();
-    }
-    const parsed = Date.parse(item.searchedAt);
-    return Number.isNaN(parsed) ? 0 : parsed;
-  };
-
-  const sortByDateDesc = (list) =>
-    [...list].sort((a, b) => getSearchTimestamp(b) - getSearchTimestamp(a));
-
   useEffect(() => {
     const loadSaved = async () => {
+      setStatus('loading');
+
       if (!user) {
-        // Guest: show user-scoped (guest) localStorage items only
+        // Guest: only show localStorage items (no cloud)
         const guestSearches = getRecentSearches(null);
-        setItems(guestSearches);
+        setItems(deduplicateItems(sortByDateDesc(guestSearches)));
         setStatus('success');
         return;
       }
 
-      // Logged-in user: load user-scoped localStorage items while cloud loads
-      const localSearches = getRecentSearches(user.uid);
-      setItems(localSearches);
-      setStatus(localSearches.length > 0 ? 'success' : 'loading');
-
-      setLoadingCloud(true);
-
       try {
+        // Logged-in: fetch from Firestore only (cloud is the single source of truth)
         const cloudSearches = await fetchSavedSearches();
-        const sortedCloud = sortByDateDesc(cloudSearches);
-
-        if (sortedCloud.length > 0) {
-          // Cloud data is the source of truth for logged-in users
-          setItems(sortedCloud);
-        } else if (localSearches.length > 0) {
-          // Fallback: show local items if cloud is empty
-          setItems(localSearches);
-        } else {
-          setItems([]);
-        }
-
+        // Server returns sorted desc, deduplicate in case of legacy duplicates
+        setItems(deduplicateItems(cloudSearches));
         setStatus('success');
       } catch (err) {
         console.error('[Saved] failed to load cloud history:', err);
+        // Fallback to localStorage on network error
+        const localSearches = getRecentSearches(user.uid);
+        setItems(deduplicateItems(sortByDateDesc(localSearches)));
         setStatus('success');
-      } finally {
-        setLoadingCloud(false);
       }
     };
 
@@ -86,8 +85,6 @@ function Saved() {
     setShowConfirm(false);
     try {
       await handleDelete(pendingDelete);
-    } catch (err) {
-      // handleDelete already sets status or would log; keep UX simple
     } finally {
       setPendingDelete(null);
     }
@@ -99,11 +96,11 @@ function Saved() {
   };
 
   const handleDelete = async (item) => {
-    const localId = getItemKey(item);
-    const isLocalOnly = item.id === localId || !user;
+    const itemKey = `${(item.concept || '').toLowerCase().trim()}||${(item.category || 'general').toLowerCase().trim()}`;
+    const isLocalOnly = !user || !item.id || item.id === itemKey;
 
     if (isLocalOnly) {
-      removeRecentSearch(localId, user?.uid ?? null);
+      removeRecentSearch(item.id, user?.uid ?? null);
       setItems((current) => current.filter((entry) => entry.id !== item.id));
       showToast('Removed local search', 'success');
       return;
@@ -114,7 +111,6 @@ function Saved() {
       setItems((current) => current.filter((entry) => entry.id !== item.id));
       showToast('Saved concept removed', 'success');
     } catch (err) {
-      setStatus('success');
       showToast('Unable to remove saved concept', 'error');
     }
   };
@@ -138,9 +134,6 @@ function Saved() {
                 ? 'Your search history is stored securely in your account and sorted by most recent.'
                 : 'Local recent searches are shown here. Sign in to sync saved concepts across devices.'}
             </p>
-            {loadingCloud && (
-              <p className="mt-1 text-xs text-slate-500">Syncing with your account…</p>
-            )}
           </div>
           <Button variant="primary" type="button" onClick={() => navigate('/')} className="px-5 py-3">
             Search a new concept
@@ -164,6 +157,7 @@ function Saved() {
           ))}
         </div>
       )}
+
       <ConfirmDialog
         open={showConfirm}
         title="Delete saved concept"
