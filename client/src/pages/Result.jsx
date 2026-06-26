@@ -7,6 +7,7 @@ import TimerAnimation from '../components/TimerAnimation';
 import VoicePlayer from '../components/VoicePlayer';
 import FocusReader from '../components/FocusReader';
 import VideoPreview from '../components/VideoPreview';
+import RagSourceBadge from '../components/RagSourceBadge';
 import { useToast } from '../context/ToastContext';
 import Button from '../components/ui/Button';
 import { fontClass, modeClass, sizeClass } from '../utils/accessibility';
@@ -36,12 +37,15 @@ function Result() {
   const { user, loading: authLoading } = useAuth();
   const initialConcept = location.state?.concept || '';
   const initialCategory = location.state?.category || 'General';
+  const initialDifficulty = location.state?.difficulty || 'medium';
 
   const [concept] = useState(initialConcept);
   const [category] = useState(initialCategory);
+  const [difficulty] = useState(initialDifficulty);
   const [data, setData] = useState(null);
   const [status, setStatus] = useState(initialConcept ? 'loading' : 'idle');
   const [error, setError] = useState('');
+  const [errorRagMeta, setErrorRagMeta] = useState(null);
   
   const [videoData, setVideoData] = useState(null);
   const [videoStatus, setVideoStatus] = useState('idle');
@@ -83,7 +87,7 @@ function Result() {
       try {
         const response = await apiClient.post(
           '/api/concept',
-          { concept, category },
+          { concept, category, difficulty },
           { signal: controller.signal }
         );
           // Log the raw API response for debugging
@@ -155,11 +159,16 @@ function Result() {
           return;
         }
 
-        setError(
-          err?.response?.data?.message ||
-            err?.message ||
-            'Unable to load the concept explanation. Please try again.'
-        );
+        if (err?.response?.status === 404 && err?.response?.data?.found === false) {
+          setErrorRagMeta({ found: false });
+          setError(err?.response?.data?.message);
+        } else {
+          setError(
+            err?.response?.data?.message ||
+              err?.message ||
+              'Unable to load the concept explanation. Please try again.'
+          );
+        }
         setStatus('error');
       }
     }
@@ -441,6 +450,7 @@ function Result() {
       ) : status === 'error' ? (
         <div className="rounded-3xl border border-rose-400/20 bg-[#2f1d29]/80 p-8 shadow-soft">
           <h2 className="text-2xl font-semibold text-white">Something went wrong</h2>
+          {errorRagMeta && <RagSourceBadge meta={errorRagMeta} />}
           <p className="mt-3 text-slate-300">{error}</p>
           <div className="mt-6">
             <Button variant="primary" onClick={() => navigate('/')}>Search again</Button>
@@ -453,6 +463,7 @@ function Result() {
               <div>
                 <p className="text-sm uppercase tracking-[0.35em] text-slate-400">Concept overview</p>
                 <h2 className="mt-3 text-3xl font-semibold text-white">{data.concept}</h2>
+                <RagSourceBadge meta={data.ragMeta} />
                 {data.oneLiner && (
                   <p className="mt-2 text-sm text-slate-300 italic">{data.oneLiner}</p>
                 )}
@@ -541,31 +552,7 @@ function Result() {
 
                 </div>
 
-                <aside className="space-y-6 rounded-3xl border border-white/10 bg-white/5 p-6 text-slate-300 shadow-soft">
-                  <div>
-                    <p className="text-sm uppercase tracking-[0.35em] text-slate-400">Learning progress</p>
-                    <h3 className="mt-3 text-xl font-semibold text-white">Track your lesson activity</h3>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="rounded-3xl bg-slate-950/80 p-4">
-                      <p className="text-sm text-slate-400">Concepts reviewed</p>
-                      <p className="mt-2 text-3xl font-semibold text-white">{progress.conceptsReviewed}</p>
-                    </div>
-                    <div className="rounded-3xl bg-slate-950/80 p-4">
-                      <p className="text-sm text-slate-400">Quizzes completed</p>
-                      <p className="mt-2 text-3xl font-semibold text-white">{progress.quizzesCompleted}</p>
-                    </div>
-                    <div className="rounded-3xl bg-slate-950/80 p-4">
-                      <p className="text-sm text-slate-400">PDF answers generated</p>
-                      <p className="mt-2 text-3xl font-semibold text-white">{progress.pdfQuestionsAnswered}</p>
-                    </div>
-                  </div>
-                  <div className="rounded-3xl bg-slate-950/80 p-4">
-                    <p className="text-sm uppercase tracking-[0.35em] text-slate-400">Lesson tools</p>
-                    <Button variant="ghost" className="mt-4 w-full text-left" onClick={handleSaveLesson}>{lessonSaved ? 'Lesson saved' : 'Save lesson'}</Button>
-                    <Button variant="primary" className="mt-3 w-full" onClick={handleExportLesson}>Export lesson notes</Button>
-                  </div>
-                </aside>
+
               </div>
             </div>
 
@@ -612,6 +599,8 @@ function Result() {
                     <p className="mt-3 text-base text-white">Share, copy, print, or search for another concept.</p>
                   </div>
                   <div className="space-y-3">
+                    <Button variant="primary" className="w-full text-left" onClick={handleSaveLesson}>{lessonSaved ? 'Lesson saved' : 'Save lesson to Bookmarks'}</Button>
+                    <Button variant="ghost" className="w-full text-left" onClick={handleExportLesson}>Export lesson notes</Button>
                     <Button variant="ghost" className="w-full text-left" onClick={copyResultText}>Copy full explanation</Button>
                     <Button variant="ghost" className="w-full text-left" onClick={shareConcept}>Share concept</Button>
                     <Button variant="ghost" className="w-full text-left" onClick={printExplanation}>Print summary</Button>

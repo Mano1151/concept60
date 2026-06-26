@@ -2,23 +2,23 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
+import { useAdmin } from '../context/AdminContext';
 import Button from './ui/Button';
 import Card from './ui/Card';
 import { getLocalSetting, setLocalSetting } from '../utils/localStorage';
 
 const baseMenuItems = [
   { label: 'Home', path: '/' },
-  { label: 'Trending', path: '/trending' },
-  { label: 'PDF Q&A', path: '/pdf-qa' },
-  { label: 'Saved', path: '/saved' },
+  { label: 'Explore Topics', path: '/trending' },
+  { label: 'Bookmarks', path: '/bookmarks' },
   { label: 'Profile', path: '/profile' },
-  { label: 'Settings', path: '/settings' },
 ];
 
 function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [theme, setTheme] = useState('dark');
   const { user, logout } = useAuth();
+  const { isAdmin } = useAdmin();
 
   useEffect(() => {
     const savedSettings = getLocalSetting('concept60_accessibility_settings', null);
@@ -47,8 +47,8 @@ function Navbar() {
   return (
     <header className="glass border-b border-white/6">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
-        <Link to="/" className="text-lg font-semibold text-white">
-          Concept in 60 Seconds
+        <Link to="/" className="flex items-center gap-2 text-lg font-semibold text-white">
+          Concept 60
         </Link>
 
         <div className="flex items-center gap-3 md:hidden">
@@ -85,6 +85,19 @@ function Navbar() {
               {item.label}
             </NavLink>
           ))}
+
+          {isAdmin && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `rounded-2xl px-3 py-2 text-sm transition ${
+                  isActive ? 'bg-red-500/20 text-red-400' : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                }`
+              }
+            >
+              ⚙️ Admin
+            </NavLink>
+          )}
 
           <Button
             variant="ghost"
@@ -141,6 +154,20 @@ function Navbar() {
                   {item.label}
                 </NavLink>
               ))}
+
+              {isAdmin && (
+                <NavLink
+                  to="/admin"
+                  onClick={() => setMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `rounded-2xl px-4 py-3 text-sm transition ${
+                      isActive ? 'bg-red-500/20 text-red-400' : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                    }`
+                  }
+                >
+                  ⚙️ Admin
+                </NavLink>
+              )}
 
               <Button
                 variant="ghost"

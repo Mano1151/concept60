@@ -1,6 +1,6 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import conceptRouter from './routes/concept.js';
@@ -8,8 +8,9 @@ import videoRouter from './routes/video.js';
 import qaRouter from './routes/qa.js';
 import historyRouter from './routes/history.js';
 import authRouter from './routes/auth.js';
-
-dotenv.config();
+import adminRouter from './routes/admin.js';
+import knowledgeRouter from './routes/knowledge.js';
+import testRagRouter from './routes/testRag.js'; // DEV ONLY — remove before production deploy
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -97,9 +98,12 @@ app.use('/api/video', express.json({ limit: '5kb' }), videoLimiter, videoRouter)
 app.use('/api/qa', express.json({ limit: '50kb' }), qaLimiter, qaRouter);
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/history', historyLimiter, historyRouter);
+app.use('/api/admin', adminRouter); // uses own rate limits/auth
+app.use('/api/knowledge', knowledgeRouter);
+app.use('/api/test/rag', testRagRouter); // DEV ONLY — no auth, no rate limit
 
 const server = app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
+  console.log(`Server listening on port ${port}!!!`);
 });
 
 server.on('error', (error) => {

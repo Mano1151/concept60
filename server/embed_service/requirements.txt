@@ -1,0 +1,8 @@
+# Python dependencies for the embedding microservice
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+sentence-transformers>=2.7.0
+python-multipart>=0.0.9
+pypdf>=3.17.0
+pinecone>=3.2.2
+python-dotenv>=1.0.0

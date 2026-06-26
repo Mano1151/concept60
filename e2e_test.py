@@ -12,7 +12,7 @@ from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
 # ─── 1. Run Live Selenium E2E Test ───────────────────────────────────────────
 def run_live_test():
-    print("Starting Live Selenium E2E Test on https://concept60-1.onrender.com/ ...")
+    print("Starting Live Selenium E2E Test on http://localhost:5173/ ...")
     
     chrome_options = Options()
     chrome_options.add_argument("--headless")  # Run headless for server/background execution
@@ -27,7 +27,7 @@ def run_live_test():
     
     try:
         # Navigate to the hosted app
-        driver.get("https://concept60-1.onrender.com/")
+        driver.get("http://localhost:5173/")
         print("Navigated to URL successfully.")
         
         # Wait for body to load

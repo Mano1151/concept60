@@ -10,5 +10,10 @@ service cloud.firestore {
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // Allow users to check if they are an admin
+    match /admins/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }

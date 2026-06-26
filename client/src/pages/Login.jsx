@@ -9,6 +9,7 @@ function Login() {
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
@@ -50,6 +51,10 @@ function Login() {
     }
   };
 
+  const handleAdminShortcut = () => {
+    setEmail('manoit2005@gmail.com');
+  };
+
   return (
     <section className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-panel/80 p-8 shadow-soft backdrop-blur-md">
       <div className="space-y-5">
@@ -72,13 +77,22 @@ function Login() {
 
           <label className="block">
             <span className="text-sm font-medium text-slate-200">Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-2 w-full rounded-3xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-slate-500 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-              placeholder="••••••••"
-            />
+            <div className="relative mt-2">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-3xl border border-white/10 bg-white/5 px-4 py-3 pr-12 text-white placeholder:text-slate-500 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition"
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
           </label>
 
           <div className="flex items-center justify-between text-sm text-slate-400">
@@ -110,6 +124,16 @@ function Login() {
         >
           Continue with Google
         </Button>
+        
+        <div className="flex justify-center mt-2">
+          <button
+            type="button"
+            onClick={handleAdminShortcut}
+            className="text-xs text-slate-500 hover:text-white transition"
+          >
+            Log in as Administrator
+          </button>
+        </div>
 
         {error ? <p className="text-sm text-rose-300">{error}</p> : null}
 

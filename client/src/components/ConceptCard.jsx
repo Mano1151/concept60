@@ -9,7 +9,14 @@ function ConceptCard({ item, onView, onDelete }) {
     timestamp = Number.isNaN(parsed) ? null : new Date(parsed);
   }
 
-  const when = timestamp ? timestamp.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Saved recently';
+  const when = (timestamp || new Date()).toLocaleString('en-US', { 
+    month: 'short', 
+    day: 'numeric', 
+    year: 'numeric', 
+    hour: 'numeric', 
+    minute: '2-digit', 
+    hour12: true 
+  });
 
   return (
     <article className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-soft transition hover:shadow-md hover:border-accent/70 hover:bg-white/10">

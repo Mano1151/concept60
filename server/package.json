@@ -13,6 +13,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",
     "@google/generative-ai": "^0.24.1",
+    "@pinecone-database/pinecone": "^8.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.18.2",
@@ -20,6 +21,7 @@
     "firebase-admin": "^13.9.0",
     "groq-sdk": "^1.2.1",
     "helmet": "^7.0.0",
+    "multer": "^2.2.0",
     "openai": "^6.37.0"
   },
   "devDependencies": {

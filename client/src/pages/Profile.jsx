@@ -115,6 +115,27 @@ function Profile() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [sessionTime, setSessionTime] = useState('00:00');
+
+  // ── Live Session Timer ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!sessionStorage.getItem('sessionStartTime')) {
+      sessionStorage.setItem('sessionStartTime', Date.now().toString());
+    }
+    const startTime = parseInt(sessionStorage.getItem('sessionStartTime'), 10);
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const diffSeconds = Math.floor((now - startTime) / 1000);
+      const m = Math.floor(diffSeconds / 60).toString().padStart(2, '0');
+      const s = (diffSeconds % 60).toString().padStart(2, '0');
+      setSessionTime(`${m}:${s}`);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // ── Load live Firestore history ────────────────────────────────────────────
   useEffect(() => {
@@ -184,7 +205,6 @@ function Profile() {
 
   // ── Derive all stats from live Firestore data only ─────────────────────────
   const totalConcepts  = allSearches.length;
-  const minutesLearned = totalConcepts * 6; // ~6 min avg read per concept
   const currentXP      = totalConcepts * 60;
   const level          = Math.max(1, Math.ceil(totalConcepts / 4));
   const nextLevelXP    = Math.max(500, level * 500);
@@ -326,8 +346,8 @@ function Profile() {
         </div>
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft text-center">
           <div className="text-3xl mb-2">⏱️</div>
-          <div className="text-2xl font-bold text-white">{isLoading ? '…' : minutesLearned}</div>
-          <div className="text-sm text-slate-300">Minutes Learned</div>
+          <div className="text-2xl font-bold text-white tabular-nums">{sessionTime}</div>
+          <div className="text-sm text-slate-300">Live Session Time</div>
         </div>
       </div>
 

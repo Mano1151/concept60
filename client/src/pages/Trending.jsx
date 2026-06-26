@@ -1,225 +1,128 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-const trendingConcepts = [
-  {
-    id: '1',
-    concept: 'Machine Learning',
-    category: 'Technology',
-    rank: 1,
-    searches: 1250,
-    change: '+15%',
-    description: 'How computers learn from data without being explicitly programmed',
-  },
-  {
-    id: '2',
-    concept: 'Quantum Computing',
-    category: 'Science',
-    rank: 2,
-    searches: 980,
-    change: '+8%',
-    description: 'Computing using quantum-mechanical phenomena',
-  },
-  {
-    id: '3',
-    concept: 'Blockchain',
-    category: 'Technology',
-    rank: 3,
-    searches: 875,
-    change: '+22%',
-    description: 'A distributed ledger technology that maintains a continuously growing list of records',
-  },
-  {
-    id: '4',
-    concept: 'Neural Networks',
-    category: 'Technology',
-    rank: 4,
-    searches: 720,
-    change: '+5%',
-    description: 'Computing systems inspired by biological neural networks',
-  },
-  {
-    id: '5',
-    concept: 'Cryptocurrency',
-    category: 'Business',
-    rank: 5,
-    searches: 650,
-    change: '+12%',
-    description: 'Digital or virtual currency that uses cryptography for security',
-  },
-  {
-    id: '6',
-    concept: 'Artificial Intelligence',
-    category: 'Technology',
-    rank: 6,
-    searches: 580,
-    change: '+3%',
-    description: 'The simulation of human intelligence in machines',
-  },
-  {
-    id: '7',
-    concept: 'Climate Change',
-    category: 'Science',
-    rank: 7,
-    searches: 520,
-    change: '+18%',
-    description: 'Long-term shifts in temperatures and weather patterns',
-  },
-  {
-    id: '8',
-    concept: 'Sustainable Energy',
-    category: 'Science',
-    rank: 8,
-    searches: 480,
-    change: '+9%',
-    description: 'Energy that meets present needs without compromising future generations',
-  },
-];
+import apiClient from '../services/api';
+import DifficultySelector from '../components/DifficultySelector';
+import Card from '../components/ui/Card';
 
 function Trending() {
   const navigate = useNavigate();
-  const [animatedRanks, setAnimatedRanks] = useState([]);
+  const [topics, setTopics] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [difficulty, setDifficulty] = useState('medium');
 
   useEffect(() => {
-    // Animate ranks appearing one by one
-    const timer = setTimeout(() => {
-      setAnimatedRanks(trendingConcepts.map((_, index) => index));
-    }, 100);
-    return () => clearTimeout(timer);
+    async function fetchTopics() {
+      try {
+        setLoading(true);
+        // Pass difficulty to API to filter if we wanted to, or filter locally.
+        // For now, we'll fetch all and just pass the selected difficulty to the search.
+        const res = await apiClient.get('/api/knowledge/topics');
+        setTopics(res.data.topics || []);
+        const cats = res.data.categories || [];
+        setCategories(cats);
+        if (cats.length > 0) setSelectedCategory(cats[0]);
+      } catch (err) {
+        console.error('Failed to load topics', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchTopics();
   }, []);
 
-  const handleConceptClick = (concept) => {
-    navigate('/result', { state: { concept: concept.concept, category: concept.category } });
+  const handleTopicClick = (topic) => {
+    navigate('/result', { state: { concept: topic.name, category: topic.category, difficulty } });
   };
 
-  const getRankIcon = (rank) => {
-    switch (rank) {
-      case 1:
-        return '🥇';
-      case 2:
-        return '🥈';
-      case 3:
-        return '🥉';
-      default:
-        return `#${rank}`;
+  const getDifficultyColor = (diff) => {
+    switch (diff) {
+      case 'easy': return 'text-green-400 bg-green-400/10 border-green-400/20';
+      case 'medium': return 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20';
+      case 'hard': return 'text-red-400 bg-red-400/10 border-red-400/20';
+      default: return 'text-slate-400 bg-slate-400/10 border-slate-400/20';
     }
   };
 
-  const getRankColor = (rank) => {
-    switch (rank) {
-      case 1:
-        return 'text-yellow-400';
-      case 2:
-        return 'text-slate-300';
-      case 3:
-        return 'text-amber-600';
-      default:
-        return 'text-slate-400';
-    }
-  };
+  const filteredTopics = topics.filter(t => !selectedCategory || t.category === selectedCategory);
 
   return (
     <section className="space-y-6">
       <div className="rounded-3xl border border-white/10 bg-panel/80 p-8 shadow-soft backdrop-blur-md">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-2xl font-semibold text-white">Trending Concepts</h2>
+            <h2 className="text-3xl font-bold text-white">Explore Topics</h2>
             <p className="mt-2 text-slate-300">
-              Discover what's popular right now. See what other learners are exploring.
+              Browse concepts currently available in your knowledge base.
             </p>
           </div>
-          <div className="rounded-3xl bg-white/5 px-4 py-3 text-sm text-slate-300">
-            Updated hourly
+          <div className="shrink-0 bg-white/5 p-2 rounded-2xl border border-white/5">
+            <DifficultySelector selected={difficulty} onSelect={setDifficulty} />
           </div>
         </div>
       </div>
 
-      {/* Podium for top 3 */}
-      <div className="grid gap-6 md:grid-cols-3">
-        {trendingConcepts.slice(0, 3).map((concept, index) => {
-          const isAnimated = animatedRanks.includes(index);
-          return (
-            <button
-              key={concept.id}
-              type="button"
-              onClick={() => handleConceptClick(concept)}
-              className={`group relative rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft transition-all duration-500 hover:border-accent/50 hover:bg-white/10 ${
-                isAnimated ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
-              }`}
-              style={{ transitionDelay: `${index * 200}ms` }}
-            >
-              <div className="absolute -top-4 left-6">
-                <div className={`text-3xl ${getRankColor(concept.rank)}`}>
-                  {getRankIcon(concept.rank)}
-                </div>
-              </div>
-              <div className="mt-4">
-                <h3 className="mb-2 text-xl font-semibold text-white group-hover:text-accent transition">
-                  {concept.concept}
-                </h3>
-                <p className="mb-3 text-sm text-slate-400 uppercase tracking-wider">
-                  {concept.category}
-                </p>
-                <p className="mb-4 text-sm text-slate-300 leading-relaxed">
-                  {concept.description}
-                </p>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">🔍</span>
-                    <span className="text-sm text-slate-400">
-                      {concept.searches.toLocaleString()} searches
+      {loading ? (
+        <div className="text-slate-400 p-8 text-center animate-pulse">Loading topics from knowledge base...</div>
+      ) : (
+        <div className="space-y-8">
+          {categories.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-3">
+              {categories.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`rounded-full px-5 py-2.5 text-sm font-medium transition-all ${
+                    selectedCategory === cat
+                      ? 'bg-accent text-white shadow-lg shadow-accent/30 scale-105'
+                      : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {filteredTopics.length > 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredTopics.map((topic, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleTopicClick(topic)}
+                  className="group flex flex-col items-start gap-4 rounded-3xl border border-white/10 bg-white/5 p-6 text-left shadow-soft transition-all duration-300 hover:border-accent/50 hover:bg-white/10 hover:-translate-y-1"
+                >
+                  <div className="flex w-full items-start justify-between">
+                    <span className="rounded-full bg-bg/80 px-3 py-1 text-xs uppercase tracking-wider text-slate-300">
+                      {topic.category}
+                    </span>
+                    <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold uppercase tracking-wider ${getDifficultyColor(topic.difficulty)}`}>
+                      {topic.difficulty}
                     </span>
                   </div>
-                  <span className="rounded-full bg-green-500/20 px-2 py-1 text-xs font-semibold text-green-400">
-                    {concept.change}
-                  </span>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Rest of the list */}
-      <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-soft">
-        <h3 className="mb-4 text-lg font-semibold text-white">Full Rankings</h3>
-        <div className="space-y-3">
-          {trendingConcepts.slice(3).map((concept, index) => {
-            const actualIndex = index + 3;
-            const isAnimated = animatedRanks.includes(actualIndex);
-            return (
-              <button
-                key={concept.id}
-                type="button"
-                onClick={() => handleConceptClick(concept)}
-                className={`group w-full rounded-2xl border border-white/5 bg-bg/50 p-4 text-left transition-all duration-300 hover:border-accent/30 hover:bg-white/5 ${
-                  isAnimated ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'
-                }`}
-                style={{ transitionDelay: `${actualIndex * 100}ms` }}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`text-lg font-bold ${getRankColor(concept.rank)} min-w-[2rem]`}>
-                    {concept.rank}
+                  
+                  <div className="mt-2">
+                    <h3 className="mb-2 text-xl font-semibold text-white group-hover:text-accent transition">
+                      {topic.name}
+                    </h3>
                   </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-white group-hover:text-accent transition">
-                      {concept.concept}
-                    </h4>
-                    <p className="text-sm text-slate-400">{concept.category}</p>
+                  
+                  <div className="mt-auto flex items-center gap-2 pt-4 border-t border-white/5 w-full">
+                    <span className="text-lg">📄</span>
+                    <span className="text-xs text-slate-400">Available in PDFs</span>
+                    <span className="text-accent opacity-0 transition group-hover:opacity-100 ml-auto text-sm font-medium">Explain →</span>
                   </div>
-                  <div className="text-right">
-                    <div className="text-sm text-slate-400">
-                      {concept.searches.toLocaleString()}
-                    </div>
-                    <div className="text-xs text-green-400">{concept.change}</div>
-                  </div>
-                  <div className="text-slate-400 transition group-hover:text-accent">→</div>
-                </div>
-              </button>
-            );
-          })}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center text-slate-400 py-12">
+              No topics found for this subject.
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </section>
   );
 }

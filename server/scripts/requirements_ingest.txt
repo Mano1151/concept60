@@ -1,0 +1,6 @@
+# Python dependencies for the one-time PDF ingest script
+pypdf>=3.17.0
+sentence-transformers>=2.7.0
+pinecone>=3.2.2
+tqdm>=4.66.0
+python-dotenv>=1.0.0

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import VoiceButton from './VoiceButton';
 import { addRecentSearch } from '../utils/localStorage';
 
-function SearchBar({ selectedCategory }) {
+function SearchBar({ selectedCategory, difficulty }) {
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -19,6 +19,7 @@ function SearchBar({ selectedCategory }) {
     const payload = {
       concept: trimmed,
       category: selectedCategory || 'General',
+      difficulty: difficulty || 'medium',
     };
 
     addRecentSearch(payload);

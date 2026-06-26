@@ -2,14 +2,16 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import Groq from 'groq-sdk';
+import { retrieveContext, buildRagPrompt } from './ragService.js';
 
 // Do not log API keys or key prefixes — FIX M-05: provider name logged at debug level only.
 
-const PROVIDER       = process.env.AI_PROVIDER?.toLowerCase() || 'ollama';
+const PROVIDER        = process.env.AI_PROVIDER?.toLowerCase() || 'ollama';
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
 const OPENAI_MODEL    = process.env.OPENAI_MODEL    || 'gpt-4o-mini';
 // FIX TC-337: removed OPENAI_VIDEO_MODEL (unused dead code)
 const GEMINI_MODEL    = process.env.GEMINI_MODEL    || 'gemini-1.5-flash'; // FIX TC-336: corrected model name
+const QWEN_MODEL      = process.env.QWEN_MODEL      || 'qwen/qwen3-32b'; // Qwen3 32B via Groq
 
 // Ollama configuration
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
@@ -52,6 +54,8 @@ if (PROVIDER === 'gemini'    && !geminiModel)     { ACTIVE_PROVIDER = getFallbac
 if (PROVIDER === 'openai'    && !openaiClient)    { ACTIVE_PROVIDER = getFallbackProvider() || PROVIDER; }
 if (PROVIDER === 'anthropic' && !anthropicClient) { ACTIVE_PROVIDER = getFallbackProvider() || PROVIDER; }
 if (PROVIDER === 'groq'      && !groqClient)      { ACTIVE_PROVIDER = getFallbackProvider() || PROVIDER; }
+// Qwen runs through the Groq client — fall back if Groq is unavailable
+if (PROVIDER === 'qwen'      && !groqClient)      { ACTIVE_PROVIDER = getFallbackProvider() || PROVIDER; }
 
 // FIX M-05: Provider info logged at debug level only (not info/warn)
 // Use console.debug so standard log levels suppress it in production log aggregators.
@@ -256,6 +260,27 @@ async function generateGroqResponse(prompt) {
   return response?.choices?.[0]?.message?.content || '';
 }
 
+/**
+ * Strip <think>...</think> reasoning blocks that Qwen-QwQ emits before the
+ * final answer, then return the clean JSON portion.
+ */
+function stripQwenThinkingTags(text) {
+  if (typeof text !== 'string') return text;
+  // Remove all <think>...</think> blocks (including multi-line)
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+async function generateQwenResponse(prompt) {
+  if (!groqClient) throw new Error('Groq client not initialized (needed for Qwen).');
+  const response = await withTimeout(groqClient.chat.completions.create({
+    model:       QWEN_MODEL,
+    messages:    [{ role: 'user', content: prompt }],
+    temperature: 0.3,
+  }), 90000); // Qwen3 with RAG context needs more time — 90 s timeout
+  const raw = response?.choices?.[0]?.message?.content || '';
+  return stripQwenThinkingTags(raw);
+}
+
 async function generateOllamaResponse(prompt) {
   try {
     const response = await withTimeout(ollamaClient.chat.completions.create({
@@ -350,6 +375,7 @@ async function generateGenericResponse(prompt) {
   const tryProvider = async (name) => {
     switch (name) {
       case 'groq':      return generateGroqResponse(prompt);
+      case 'qwen':      return generateQwenResponse(prompt);
       case 'ollama':    return generateOllamaResponse(prompt);
       case 'openai':    return generateOpenAIResponse(prompt);
       case 'anthropic': return generateAnthropicResponse(prompt);
@@ -358,7 +384,7 @@ async function generateGenericResponse(prompt) {
     }
   };
 
-  const fallbackOrder = ['groq', 'ollama', 'openai', 'anthropic', 'gemini'].filter(
+  const fallbackOrder = ['qwen', 'groq', 'ollama', 'openai', 'anthropic', 'gemini'].filter(
     (p) => p !== ACTIVE_PROVIDER
   );
 
@@ -367,7 +393,7 @@ async function generateGenericResponse(prompt) {
   } catch (primaryErr) {
     console.warn(`[ai] ${ACTIVE_PROVIDER} failed:`, primaryErr.message);
     for (const fb of fallbackOrder) {
-      const client = { groq: groqClient, ollama: ollamaClient, openai: openaiClient, anthropic: anthropicClient, gemini: geminiModel };
+      const client = { qwen: groqClient, groq: groqClient, ollama: ollamaClient, openai: openaiClient, anthropic: anthropicClient, gemini: geminiModel };
       if (!client[fb]) continue;
       try {
         return await runAndValidate(() => tryProvider(fb));
@@ -468,11 +494,29 @@ export async function generatePdfAnswer(question, pdfText) {
 
 // ─── Concept Generation ───────────────────────────────────────────────────────
 
-export async function generateConceptResponse(concept) {
-  const prompt = buildPrompt(concept);
+// ─── Concept Generation ───────────────────────────────────────────────────────
+
+export async function generateConceptResponse(concept, difficulty = 'medium') {
+  // ── RAG: retrieve relevant context from Pinecone ───────────────────────────
+  const { chunks, topScore, confidence, sources } = await retrieveContext(concept);
+
+  // ── STRICT RAG MODE: no chunks = not in knowledge base ────────────────────
+  if (chunks.length === 0) {
+    console.debug(`[concept] STRICT RAG: "${concept}" not found in knowledge base.`);
+    return {
+      notFound: true,
+      rawText:  null,
+      ragMeta:  { found: false, chunksUsed: 0, confidence: 'none', sources: [] },
+    };
+  }
+
+  // ── Build difficulty-aware RAG prompt ──────────────────────────────────────
+  const prompt = buildRagPrompt(concept, chunks, difficulty);
+  console.debug(`[concept] RAG prompt: "${concept}" | difficulty=${difficulty} | chunks=${chunks.length} | confidence=${confidence}`);
 
   const tryProvider = async (name) => {
     switch (name) {
+      case 'qwen':      return String((await generateQwenResponse(prompt))      || '').trim();
       case 'groq':      return String((await generateGroqResponse(prompt))      || '').trim();
       case 'ollama':    return String((await generateOllamaResponse(prompt))    || '').trim();
       case 'openai':    return String((await generateOpenAIResponse(prompt))    || '').trim();
@@ -482,21 +526,35 @@ export async function generateConceptResponse(concept) {
     }
   };
 
-  const fallbackOrder = ['groq', 'ollama', 'openai', 'anthropic', 'gemini'].filter(
+  const fallbackOrder = ['qwen', 'groq', 'ollama', 'openai', 'anthropic', 'gemini'].filter(
     (p) => p !== ACTIVE_PROVIDER
   );
 
+  let rawText = '';
   try {
-    return await tryProvider(ACTIVE_PROVIDER);
+    rawText = await tryProvider(ACTIVE_PROVIDER);
   } catch (primaryErr) {
     console.warn(`[ai] ${ACTIVE_PROVIDER} concept failed:`, primaryErr.message);
     for (const fb of fallbackOrder) {
-      const client = { groq: groqClient, ollama: ollamaClient, openai: openaiClient, anthropic: anthropicClient, gemini: geminiModel };
+      const client = { qwen: groqClient, groq: groqClient, ollama: ollamaClient, openai: openaiClient, anthropic: anthropicClient, gemini: geminiModel };
       if (!client[fb]) continue;
-      try { return await tryProvider(fb); } catch (e) { console.warn(`[ai] ${fb} fallback failed:`, e.message); }
+      try { rawText = await tryProvider(fb); break; } catch (e) { console.warn(`[ai] ${fb} fallback failed:`, e.message); }
     }
-    throw primaryErr;
+    if (!rawText) throw primaryErr;
   }
+
+  return {
+    notFound: false,
+    rawText,
+    ragMeta: {
+      found:      true,
+      chunksUsed: chunks.length,
+      confidence,
+      topScore:   Math.round(topScore * 1000) / 1000,
+      sources,
+      difficulty,
+    },
+  };
 }
 
 // ─── Video / Storyboard Generation ────────────────────────────────────────────
@@ -528,6 +586,7 @@ export async function generateVideoResponse(concept) {
 
   const tryProvider = async (name) => {
     switch (name) {
+      case 'qwen':      return generateQwenResponse(prompt);
       case 'groq':      return generateGroqResponse(prompt);
       case 'ollama':    return generateOllamaResponse(prompt);
       case 'openai':    return generateOpenAIResponse(prompt);
@@ -537,7 +596,7 @@ export async function generateVideoResponse(concept) {
     }
   };
 
-  const fallbackOrder = ['groq', 'ollama', 'openai', 'anthropic', 'gemini'].filter(
+  const fallbackOrder = ['qwen', 'groq', 'ollama', 'openai', 'anthropic', 'gemini'].filter(
     (p) => p !== ACTIVE_PROVIDER
   );
 
